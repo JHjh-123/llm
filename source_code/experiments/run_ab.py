@@ -13,7 +13,7 @@ def main() -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     runner = ExperimentRunner()
-    rounds = int(os.getenv("EXPERIMENT_ROUNDS", "3"))
+    rounds = int(os.getenv("EXPERIMENT_ROUNDS", "10"))
     results = runner.run_ab(tasks=DEFAULT_TASKS, rounds=rounds)
 
     output_path.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")

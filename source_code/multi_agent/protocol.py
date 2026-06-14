@@ -8,6 +8,21 @@ from typing import Any
 
 
 PROTOCOL_VERSION = "agent-msg/v1"
+STRUCTURED_PAYLOAD_SCHEMA = {
+    "required": {
+        "a": "short action name",
+        "out": "compact output text",
+        "refs": "list of memory or state references",
+    },
+    "optional": {
+        "in": "compact structured input summary",
+        "state": "non-text state metadata",
+        "version": "protocol version for negotiation messages",
+        "cap": "agent capability list for handshake messages",
+        "accept": "accepted communication modes for handshake messages",
+        "fields": "protocol field mapping for negotiation messages",
+    },
+}
 
 
 @dataclass
@@ -33,6 +48,7 @@ class Message:
         parent_id: str | None = None,
         error: dict[str, Any] | None = None,
     ) -> "Message":
+        validate_structured_payload(payload)
         content = str(payload.get("out", ""))
         return cls(
             message_id=_new_id("msg"),
@@ -117,10 +133,29 @@ def make_protocol_mapping(task_id: str) -> Message:
                 "refs": "memory or state references",
                 "state": "non-text state metadata",
             },
+            "schema": STRUCTURED_PAYLOAD_SCHEMA,
             "out": "protocol mapping negotiated",
             "refs": [],
         },
     )
+
+
+def validate_structured_payload(payload: dict[str, Any]) -> None:
+    missing = [field for field in STRUCTURED_PAYLOAD_SCHEMA["required"] if field not in payload]
+    if missing:
+        raise ValueError(f"Structured payload missing required fields: {', '.join(missing)}")
+    if not isinstance(payload["a"], str) or not payload["a"]:
+        raise ValueError("Structured payload field 'a' must be a non-empty string")
+    if not isinstance(payload["out"], str):
+        raise ValueError("Structured payload field 'out' must be a string")
+    if not isinstance(payload["refs"], list):
+        raise ValueError("Structured payload field 'refs' must be a list")
+    if "state" in payload and not isinstance(payload["state"], dict):
+        raise ValueError("Structured payload field 'state' must be a dict when present")
+    if "cap" in payload and not isinstance(payload["cap"], list):
+        raise ValueError("Structured payload field 'cap' must be a list when present")
+    if "accept" in payload and not isinstance(payload["accept"], list):
+        raise ValueError("Structured payload field 'accept' must be a list when present")
 
 
 def _new_id(prefix: str) -> str:

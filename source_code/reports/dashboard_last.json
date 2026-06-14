@@ -1,0 +1,224 @@
+{
+  "run_id": "e082c42a73",
+  "task": "Reuse memory from the previous protocol design task and evaluate communication overhead.",
+  "memory_mode": "isolated",
+  "environment": {
+    "os_pretty_name": "openEuler 24.03 (LTS-SP1)",
+    "os_id": "openEuler",
+    "os_version_id": "24.03",
+    "python_version": "3.13.13",
+    "llm_backend": "ollama",
+    "llm_model": "qwen3:8b",
+    "embedding_backend": "ollama",
+    "embedding_model": "bge-m3",
+    "orchestrator": "sequential"
+  },
+  "text": {
+    "task": "Reuse memory from the previous protocol design task and evaluate communication overhead.",
+    "task_id": "task_2435c871b0fa",
+    "mode": "text",
+    "final": "- No prior memory is available from a previous protocol design task.  \n- Communication overhead evaluation cannot be conducted without historical data.  \n- Recommendation: Proceed with protocol design first to gather necessary data for future overhead analysis.",
+    "metrics": {
+      "mode": "text",
+      "task": "Reuse memory from the previous protocol design task and evaluate communication overhead.",
+      "message_count": 4,
+      "char_count": 2316,
+      "approx_token_count": 577,
+      "non_text_transfer_count": 2,
+      "non_text_transfer_size": 2584,
+      "memory_hit_count": 0,
+      "memory_hit_ids": [],
+      "protocol_event_count": 0,
+      "protocol_char_count": 0,
+      "protocol_approx_token_count": 0,
+      "token_count_method": "char_approx_4",
+      "message_trace": [
+        {
+          "message_id": "msg_5170c18fb406",
+          "parent_id": null,
+          "from": "planner",
+          "to": "researcher",
+          "mode": "text",
+          "action": null,
+          "refs": [],
+          "state": {},
+          "chars": 733,
+          "approx_tokens": 183
+        },
+        {
+          "message_id": "msg_0d1abad62449",
+          "parent_id": "msg_5170c18fb406",
+          "from": "researcher",
+          "to": "executor",
+          "mode": "text",
+          "action": null,
+          "refs": [],
+          "state": {},
+          "chars": 482,
+          "approx_tokens": 120
+        },
+        {
+          "message_id": "msg_6aa7cb46fce4",
+          "parent_id": "msg_0d1abad62449",
+          "from": "executor",
+          "to": "summarizer",
+          "mode": "text",
+          "action": null,
+          "refs": [],
+          "state": {},
+          "chars": 771,
+          "approx_tokens": 192
+        },
+        {
+          "message_id": "msg_d317b9c6ab8e",
+          "parent_id": "msg_6aa7cb46fce4",
+          "from": "summarizer",
+          "to": "user",
+          "mode": "text",
+          "action": null,
+          "refs": [],
+          "state": {},
+          "chars": 330,
+          "approx_tokens": 82
+        }
+      ],
+      "non_text_transfer_trace": [
+        {
+          "transfer_type": "embedding",
+          "size": 1024
+        },
+        {
+          "transfer_type": "codeact_result",
+          "size": 1560
+        }
+      ],
+      "orchestrator": "sequential",
+      "elapsed_ms": 9641.382
+    },
+    "protocol": []
+  },
+  "structured": {
+    "task": "Reuse memory from the previous protocol design task and evaluate communication overhead.",
+    "task_id": "task_c2a489f6611f",
+    "mode": "structured",
+    "final": "- No prior memory was available to reuse for protocol design. - Communication overhead evaluation could not be perfor...",
+    "metrics": {
+      "mode": "structured",
+      "task": "Reuse memory from the previous protocol design task and evaluate communication overhead.",
+      "message_count": 4,
+      "char_count": 2437,
+      "approx_token_count": 608,
+      "non_text_transfer_count": 2,
+      "non_text_transfer_size": 2288,
+      "memory_hit_count": 0,
+      "memory_hit_ids": [],
+      "protocol_event_count": 5,
+      "protocol_char_count": 2099,
+      "protocol_approx_token_count": 523,
+      "token_count_method": "char_approx_4",
+      "message_trace": [
+        {
+          "message_id": "msg_3872ca0be23f",
+          "parent_id": null,
+          "from": "planner",
+          "to": "researcher",
+          "mode": "structured",
+          "action": "plan",
+          "refs": [],
+          "state": {},
+          "chars": 397,
+          "approx_tokens": 99
+        },
+        {
+          "message_id": "msg_16e9cadc7d63",
+          "parent_id": "msg_3872ca0be23f",
+          "from": "researcher",
+          "to": "executor",
+          "mode": "structured",
+          "action": "research",
+          "refs": [],
+          "state": {},
+          "chars": 546,
+          "approx_tokens": 136
+        },
+        {
+          "message_id": "msg_32bd6d34951e",
+          "parent_id": "msg_16e9cadc7d63",
+          "from": "executor",
+          "to": "summarizer",
+          "mode": "structured",
+          "action": "execute",
+          "refs": [
+            "190a764574f3"
+          ],
+          "state": {
+            "emb_dim": 1024,
+            "tool": "codeact/python",
+            "tool_ok": true,
+            "tool_result": {
+              "task_words": 12,
+              "finding_chars": 120,
+              "workspace_files_seen": 3,
+              "memory_tool_hits": 0,
+              "metrics": {
+                "count": 2,
+                "mean": 104.0,
+                "min": 88.0,
+                "max": 120.0,
+                "pstdev": 16.0
+              },
+              "table_preview": "| metric | value |\n| --- | --- |\n| task_chars | 88 |\n| finding_chars | 120 |\n| memory_hits | 0 |",
+              "reusable": true
+            }
+          },
+          "chars": 932,
+          "approx_tokens": 233
+        },
+        {
+          "message_id": "msg_aa1e7dbafdf0",
+          "parent_id": "msg_32bd6d34951e",
+          "from": "summarizer",
+          "to": "user",
+          "mode": "structured",
+          "action": "summarize",
+          "refs": [
+            "190a764574f3"
+          ],
+          "state": {},
+          "chars": 562,
+          "approx_tokens": 140
+        }
+      ],
+      "non_text_transfer_trace": [
+        {
+          "transfer_type": "embedding",
+          "size": 1024
+        },
+        {
+          "transfer_type": "codeact_result",
+          "size": 1264
+        }
+      ],
+      "orchestrator": "sequential",
+      "elapsed_ms": 8416.507
+    },
+    "protocol": [
+      "{\"f\":\"runtime\",\"mid\":\"msg_220c0f9c2213\",\"p\":{\"a\":\"protocol_map\",\"fields\":{\"a\":\"action\",\"in\":\"compact inputs\",\"out\":\"compact output\",\"refs\":\"memory or state references\",\"state\":\"non-text state metadata\"},\"out\":\"protocol mapping negotiated\",\"refs\":[],\"schema\":{\"optional\":{\"accept\":\"accepted communication modes for handshake messages\",\"cap\":\"agent capability list for handshake messages\",\"fields\":\"protocol field mapping for negotiation messages\",\"in\":\"compact structured input summary\",\"state\":\"non-text state metadata\",\"version\":\"protocol version for negotiation messages\"},\"required\":{\"a\":\"short action name\",\"out\":\"compact output text\",\"refs\":\"list of memory or state references\"}},\"version\":\"agent-msg/v1\"},\"pid\":null,\"s\":\"agent-msg/v1\",\"t\":\"all\",\"tid\":\"task_c2a489f6611f\",\"ts\":1781437154.284117}",
+      "{\"f\":\"planner\",\"mid\":\"msg_fa9412e4d84d\",\"p\":{\"a\":\"handshake\",\"accept\":[\"text\",\"structured\"],\"cap\":[\"planning\",\"task_decomposition\",\"llm_chat\"],\"out\":\"planner ready\",\"refs\":[],\"version\":\"agent-msg/v1\"},\"pid\":null,\"s\":\"agent-msg/v1\",\"t\":\"runtime\",\"tid\":\"task_c2a489f6611f\",\"ts\":1781437154.284136}",
+      "{\"f\":\"researcher\",\"mid\":\"msg_f76c2becb6e8\",\"p\":{\"a\":\"handshake\",\"accept\":[\"text\",\"structured\"],\"cap\":[\"memory_search\",\"analysis\",\"llm_chat\"],\"out\":\"researcher ready\",\"refs\":[],\"version\":\"agent-msg/v1\"},\"pid\":null,\"s\":\"agent-msg/v1\",\"t\":\"runtime\",\"tid\":\"task_c2a489f6611f\",\"ts\":1781437154.28415}",
+      "{\"f\":\"executor\",\"mid\":\"msg_1f45e93edeef\",\"p\":{\"a\":\"handshake\",\"accept\":[\"text\",\"structured\"],\"cap\":[\"codeact_python\",\"read_file\",\"search_files\",\"load_json\",\"load_csv\",\"make_markdown_table\",\"compute_numeric_metrics\",\"search_memory\",\"memory_write\",\"embedding_state\",\"llm_chat\"],\"out\":\"executor ready\",\"refs\":[],\"version\":\"agent-msg/v1\"},\"pid\":null,\"s\":\"agent-msg/v1\",\"t\":\"runtime\",\"tid\":\"task_c2a489f6611f\",\"ts\":1781437154.284164}",
+      "{\"f\":\"summarizer\",\"mid\":\"msg_69f9ace68bec\",\"p\":{\"a\":\"handshake\",\"accept\":[\"text\",\"structured\"],\"cap\":[\"summarization\",\"llm_chat\"],\"out\":\"summarizer ready\",\"refs\":[],\"version\":\"agent-msg/v1\"},\"pid\":null,\"s\":\"agent-msg/v1\",\"t\":\"runtime\",\"tid\":\"task_c2a489f6611f\",\"ts\":1781437154.28419}"
+    ]
+  },
+  "comparison": {
+    "application_token_delta_pct": 5.37,
+    "application_char_delta_pct": 5.22,
+    "elapsed_delta_pct": -12.7,
+    "protocol_token_overhead": 523,
+    "structured_total_with_protocol_tokens": 1131,
+    "text_total_with_protocol_tokens": 577,
+    "memory_hit_delta": 0,
+    "non_text_transfer_delta": 0
+  },
+  "elapsed_ms": 18154.983
+}

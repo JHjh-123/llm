@@ -1,31 +1,37 @@
-# Multi-Agent Low-Overhead Communication Prototype
+# 多智能体低开销通信实验系统
 
-This is a minimal runnable prototype for the technical research task:
+这是一个用于验证“多智能体协作中的低开销通信、状态传递与共享记忆”的实验原型。
 
-- multiple agents collaborate on a task
-- two communication modes are supported: plain text and structured messages
-- a shared memory store is available
-- metrics are collected for messages, approximate tokens, elapsed time, memory hits, and non-text state transfers
-- the LLM backend is swappable: mock first, OpenAI-compatible HTTP later
+系统目前支持：
 
-## Quick Start
+- 多 Agent 协作：`planner -> researcher -> executor -> summarizer`
+- 两种通信模式对比：纯文本通信 `text` 与结构化通信 `structured`
+- 共享记忆：SQLite 持久化，支持关键词、标签、embedding 混合检索
+- 指标采集：消息数、字符数、近似 token、耗时、记忆命中、非文本状态传递
+- 真实 LLM 后端：Ollama 或 OpenAI-compatible HTTP
+- CodeAct 工具执行：受限 Python 工具动作空间
+- 浏览器对比面板：直接查看 text 和 structured 的差距
 
-Run the mock A/B experiment:
+## 依赖安装
+
+建议在 `source_code` 目录下操作：
 
 ```bash
 cd /home/pxf/llm/source_code
-MEMORY_RESET=1 EXPERIMENT_ROUNDS=1 python3 -m experiments.run_ab
+python3 -m pip install -r requirements.txt
 ```
 
-The result will be written to:
+说明：
 
-```text
-reports/results.json
-```
+- 核心顺序执行器、Ollama/OpenAI-compatible 调用、SQLite 记忆、CodeAct 工具和 dashboard 都只依赖 Python 标准库。
+- `requirements.txt` 当前安装的是可选的 `langgraph`，用于启用 `ORCHESTRATOR=langgraph`。
+- 如果只使用默认 `sequential` 编排，不安装依赖也能运行核心系统。
 
-## Later: Connect A Server LLM
+## 后端配置
 
-For an Ollama server, set:
+`LLM_BACKEND` 必须显式配置。系统不会再默认走 mock 或假模型。
+
+### Ollama 后端
 
 ```bash
 cd /home/pxf/llm/source_code
@@ -34,90 +40,225 @@ export OLLAMA_BASE_URL=http://192.168.110.22:11434
 export LLM_MODEL=qwen3:8b
 export OLLAMA_THINK=false
 export OLLAMA_NUM_PREDICT=256
-export MEMORY_RESET=1
-export EXPERIMENT_ROUNDS=1
-python3 -m experiments.run_ab
 ```
 
-For an OpenAI-compatible server, set:
+如果要使用真实 embedding：
 
 ```bash
+export EMBEDDING_BACKEND=ollama
+export OLLAMA_EMBED_MODEL=bge-m3
+export EMBEDDING_TIMEOUT=10
+```
+
+### OpenAI-compatible 后端
+
+```bash
+cd /home/pxf/llm/source_code
 export LLM_BACKEND=openai_compatible
 export LLM_BASE_URL=http://your-server:8000/v1
 export LLM_MODEL=your-model-name
 export LLM_API_KEY=dummy
-export MEMORY_RESET=1
-export EXPERIMENT_ROUNDS=1
-python3 -m experiments.run_ab
 ```
 
-The OpenAI-compatible path only needs a chat-completions compatible endpoint:
+该后端只要求服务兼容：
 
 ```text
 POST /v1/chat/completions
 ```
 
-## Optional Components
+## 运行 A/B 实验
 
-### LangGraph orchestration
+运行 10 轮默认任务集：
 
-The prototype runs with a built-in sequential orchestrator by default. If LangGraph is installed, enable it with:
+```bash
+cd /home/pxf/llm/source_code
+export LLM_BACKEND=ollama
+export OLLAMA_BASE_URL=http://192.168.110.22:11434
+export LLM_MODEL=qwen3:8b
+export OLLAMA_THINK=false
+export OLLAMA_NUM_PREDICT=256
+export EMBEDDING_BACKEND=ollama
+export OLLAMA_EMBED_MODEL=bge-m3
+export MEMORY_RESET=1
+export EXPERIMENT_ROUNDS=10
+python3 -m experiments.run_ab
+```
+
+输出文件：
+
+```text
+reports/results.json
+```
+
+## 生成 Markdown 报告
+
+```bash
+cd /home/pxf/llm/source_code
+LLM_BACKEND=ollama \
+OLLAMA_BASE_URL=http://192.168.110.22:11434 \
+LLM_MODEL=qwen3:8b \
+OLLAMA_THINK=false \
+OLLAMA_NUM_PREDICT=192 \
+EMBEDDING_BACKEND=ollama \
+OLLAMA_EMBED_MODEL=bge-m3 \
+ORCHESTRATOR=langgraph \
+MEMORY_RESET=1 \
+DEMO_ROUNDS=10 \
+python3 -m experiments.demo
+```
+
+输出文件：
+
+```text
+reports/demo_results.json
+reports/demo_report.md
+```
+
+## 运行浏览器对比面板
+
+前台运行方式：
+
+```bash
+cd /home/pxf/llm/source_code
+LLM_BACKEND=ollama \
+OLLAMA_BASE_URL=http://192.168.110.22:11434 \
+LLM_MODEL=qwen3:8b \
+OLLAMA_THINK=false \
+OLLAMA_NUM_PREDICT=128 \
+EMBEDDING_BACKEND=ollama \
+OLLAMA_EMBED_MODEL=bge-m3 \
+python3 -m experiments.dashboard
+```
+
+打开浏览器访问：
+
+```text
+http://127.0.0.1:8765
+```
+
+如果当前 shell 设置了代理，命令行访问本机接口时可以绕过代理：
+
+```bash
+curl --noproxy '*' http://127.0.0.1:8765/api/config
+```
+
+### 后台运行 dashboard
+
+```bash
+cd /home/pxf/llm/source_code
+LLM_BACKEND=ollama \
+OLLAMA_BASE_URL=http://192.168.110.22:11434 \
+LLM_MODEL=qwen3:8b \
+OLLAMA_THINK=false \
+OLLAMA_NUM_PREDICT=128 \
+EMBEDDING_BACKEND=ollama \
+OLLAMA_EMBED_MODEL=bge-m3 \
+nohup python3 -m experiments.dashboard > reports/dashboard.log 2>&1 &
+echo $! > reports/dashboard.pid
+```
+
+查看服务日志：
+
+```bash
+tail -f reports/dashboard.log
+```
+
+### 停止 dashboard 服务
+
+如果是前台运行，直接在运行服务的终端按：
+
+```text
+Ctrl+C
+```
+
+如果是按上面的后台方式运行：
+
+```bash
+cd /home/pxf/llm/source_code
+kill "$(cat reports/dashboard.pid)"
+rm -f reports/dashboard.pid
+```
+
+如果忘了 PID，也可以查找进程后停止：
+
+```bash
+pgrep -af "python3 -m experiments.dashboard"
+kill <PID>
+```
+
+## dashboard 对比口径
+
+面板支持两种口径：
+
+```text
+isolated
+```
+
+`text` 和 `structured` 使用两个独立的临时 memory 数据库，主要观察通信编码本身的开销差距。
+
+```text
+shared
+```
+
+`text` 先运行，`structured` 后运行，共用同一个临时 memory 数据库，主要观察记忆复用带来的系统效果。
+
+dashboard 每次运行会把最近一次结果写入：
+
+```text
+reports/dashboard_last.json
+```
+
+## 当前如何提高通信效率
+
+系统目前通过这些方式降低通信开销：
+
+- `structured` 模式用 `a/in/out/refs/state` 这类短字段组织消息。
+- `refs` 只传记忆 ID 或状态引用，避免重复传完整上下文。
+- `state` 承载 embedding 维度、工具执行结果等非文本状态摘要。
+- `_short()` 会压缩结构化 payload 中较长的输入与输出。
+- 协议握手开销与应用消息开销分开统计，方便判断结构化通信是否被启动成本抵消。
+
+需要注意：
+
+- 当前 token 统计方法是 `char_approx_4`，即按字符数近似估算，不是真实 tokenizer。
+- 当前非文本传递是 embedding、memory refs 和 tool result 级别，还不是真正的 KV-cache 或 hidden-state 复用。
+- CodeAct 当前是 AST 白名单轻隔离，不是 Docker/nsjail/WASM 强沙箱。
+
+## 可选组件
+
+### LangGraph 编排
+
+默认使用内置顺序编排器。安装 `requirements.txt` 后可以启用 LangGraph：
 
 ```bash
 export ORCHESTRATOR=langgraph
 python3 -m experiments.run_ab
 ```
 
-If LangGraph is not installed, the system automatically falls back to sequential orchestration.
+如果没有安装 LangGraph，系统会自动回退到 `sequential`。
 
-### Persistent memory
+### 共享记忆
 
-Shared memory is stored in SQLite:
+默认记忆文件：
 
 ```text
 data/memory.sqlite
 ```
 
-Useful environment variables:
+常用环境变量：
 
 ```bash
 export MEMORY_PATH=data/memory.sqlite
 export MEMORY_RESET=1
 ```
 
-### Real embeddings
+测试脚本默认使用 `/tmp` 下的临时数据库，不会再污染 `data/memory.sqlite`。
 
-The default embedding provider is a deterministic local hash embedding, so the system runs without extra dependencies.
-
-To use a real Ollama embedding model, first deploy/pull an embedding-capable model on the Ollama server, then run:
+## 测试命令
 
 ```bash
-export EMBEDDING_BACKEND=ollama
-export OLLAMA_EMBED_MODEL=nomic-embed-text
-export EMBEDDING_TIMEOUT=10
-```
-
-Your current `qwen3:8b` model is a chat/thinking/tools model; it is not listed as embedding-capable by the Ollama tags response.
-
-### CodeAct tool execution
-
-`ExecutorAgent` now runs a restricted Python action through `CodeActExecutor`. The tool result is written into structured message state and counted as a non-text transfer.
-
-The registered tool functions are:
-
-```text
-read_file(path, max_chars=4000)
-search_files(pattern="*.md", max_results=20)
-load_json(path)
-load_csv(path, max_rows=100)
-make_markdown_table(rows, columns=None)
-compute_numeric_metrics(values)
-summarize_records(rows)
-search_memory(query, limit=3)
-```
-
-Run the tool smoke test:
-
-```bash
+cd /home/pxf/llm/source_code
+python3 -m compileall multi_agent experiments
 python3 -m experiments.test_tools
+python3 -m experiments.test_protocol
 ```

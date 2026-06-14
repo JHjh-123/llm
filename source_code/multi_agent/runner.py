@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import os
 import uuid
-from statistics import mean
+from statistics import mean, pstdev
 from typing import Any
 
 from multi_agent.agents import AgentContext, ExecutorAgent, PlannerAgent, ResearchAgent, SummarizerAgent
+from multi_agent.environment import collect_environment
 from multi_agent.llm_client import build_llm_from_env
+from multi_agent.metrics import TOKEN_COUNT_METHOD
 from multi_agent.memory import SharedMemory
 from multi_agent.metrics import MetricsCollector
 from multi_agent.orchestrator import AgentBundle, build_orchestrator
@@ -51,7 +53,7 @@ class ExperimentRunner:
             "protocol": [message.to_wire() for message in protocol_messages],
         }
 
-    def run_ab(self, tasks: list[str], rounds: int = 3) -> dict[str, Any]:
+    def run_ab(self, tasks: list[str], rounds: int = 10) -> dict[str, Any]:
         runs = []
         for round_index in range(rounds):
             for task in tasks:
@@ -64,6 +66,7 @@ class ExperimentRunner:
             "summary": _summarize(runs),
             "runs": runs,
             "memory": self.memory.to_dict(),
+            "environment": collect_environment(),
         }
 
     def _negotiate_protocol(self, task_id: str) -> list[Any]:
@@ -84,12 +87,24 @@ def _summarize(runs: list[dict[str, Any]]) -> dict[str, Any]:
     for mode, metrics in by_mode.items():
         summary[mode] = {
             "runs": len(metrics),
+            "token_count_method": TOKEN_COUNT_METHOD,
             "avg_messages": _avg(metrics, "message_count"),
+            "std_messages": _std(metrics, "message_count"),
             "avg_chars": _avg(metrics, "char_count"),
+            "std_chars": _std(metrics, "char_count"),
             "avg_approx_tokens": _avg(metrics, "approx_token_count"),
+            "std_approx_tokens": _std(metrics, "approx_token_count"),
+            "min_approx_tokens": _min(metrics, "approx_token_count"),
+            "max_approx_tokens": _max(metrics, "approx_token_count"),
             "avg_elapsed_ms": _avg(metrics, "elapsed_ms"),
+            "std_elapsed_ms": _std(metrics, "elapsed_ms"),
+            "min_elapsed_ms": _min(metrics, "elapsed_ms"),
+            "max_elapsed_ms": _max(metrics, "elapsed_ms"),
             "avg_memory_hits": _avg(metrics, "memory_hit_count"),
+            "std_memory_hits": _std(metrics, "memory_hit_count"),
             "avg_non_text_transfers": _avg(metrics, "non_text_transfer_count"),
+            "std_non_text_transfers": _std(metrics, "non_text_transfer_count"),
+            "avg_non_text_transfer_size": _avg(metrics, "non_text_transfer_size"),
             "avg_protocol_events": _avg(metrics, "protocol_event_count"),
             "avg_protocol_chars": _avg(metrics, "protocol_char_count"),
             "avg_protocol_approx_tokens": _avg(metrics, "protocol_approx_token_count"),
@@ -104,6 +119,18 @@ def _summarize(runs: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _avg(metrics: list[dict[str, Any]], key: str) -> float:
     return round(mean(float(item[key]) for item in metrics), 3) if metrics else 0.0
+
+
+def _std(metrics: list[dict[str, Any]], key: str) -> float:
+    return round(pstdev(float(item[key]) for item in metrics), 3) if len(metrics) > 1 else 0.0
+
+
+def _min(metrics: list[dict[str, Any]], key: str) -> float:
+    return round(min(float(item[key]) for item in metrics), 3) if metrics else 0.0
+
+
+def _max(metrics: list[dict[str, Any]], key: str) -> float:
+    return round(max(float(item[key]) for item in metrics), 3) if metrics else 0.0
 
 
 def _env_bool(name: str, default: bool) -> bool:

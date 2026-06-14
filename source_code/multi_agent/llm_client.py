@@ -14,25 +14,6 @@ class LLMClient(ABC):
         raise NotImplementedError
 
 
-class MockLLMClient(LLMClient):
-    """Deterministic local fake model for wiring and metric tests."""
-
-    def chat(self, messages: list[dict[str, str]]) -> str:
-        system = messages[0]["content"].lower()
-        user = messages[-1]["content"]
-        task_line = _first_non_empty_line(user)
-
-        if "planning" in system:
-            return f"Plan: identify requirements, reuse prior memory, execute minimal steps, measure results for {task_line}"
-        if "research" in system:
-            return f"Findings: relevant constraints and reusable context were collected for {task_line}"
-        if "execution" in system:
-            return f"Answer: completed the requested work for {task_line}; reusable fact saved for later related tasks."
-        if "summarization" in system:
-            return f"- Completed: {task_line}\n- Captured metrics\n- Stored reusable memory"
-        return f"Mock response for {task_line}"
-
-
 class OpenAICompatibleClient(LLMClient):
     def __init__(self, base_url: str, model: str, api_key: str = "dummy", timeout: int = 60) -> None:
         self.base_url = base_url.rstrip("/")
@@ -114,9 +95,10 @@ class OllamaClient(LLMClient):
 
 
 def build_llm_from_env() -> LLMClient:
-    backend = os.getenv("LLM_BACKEND", "mock").lower()
-    if backend == "mock":
-        return MockLLMClient()
+    backend = os.getenv("LLM_BACKEND")
+    if not backend:
+        raise ValueError("LLM_BACKEND is required. Supported values: ollama, openai_compatible")
+    backend = backend.lower()
     if backend == "ollama":
         return OllamaClient(
             base_url=os.getenv("OLLAMA_BASE_URL", os.getenv("LLM_BASE_URL", "http://127.0.0.1:11434")),
@@ -130,15 +112,7 @@ def build_llm_from_env() -> LLMClient:
             model=os.environ["LLM_MODEL"],
             api_key=os.getenv("LLM_API_KEY", "dummy"),
         )
-    raise ValueError(f"Unsupported LLM_BACKEND: {backend}")
-
-
-def _first_non_empty_line(text: str) -> str:
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped:
-            return stripped[:120]
-    return "the task"
+    raise ValueError(f"Unsupported LLM_BACKEND: {backend}. Supported values: ollama, openai_compatible")
 
 
 def _normalize_ollama_base_url(base_url: str) -> str:

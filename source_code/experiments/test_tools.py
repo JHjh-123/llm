@@ -7,7 +7,7 @@ from multi_agent.tools import CodeActExecutor, ToolRegistry, build_codeact_for_t
 
 
 def main() -> None:
-    memory = SharedMemory(reset=True)
+    memory = SharedMemory(db_path="/tmp/llm_tool_smoke.sqlite", reset=True)
     memory.add(
         source_agent="test",
         task_topic="tool smoke test",
@@ -25,4 +25,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

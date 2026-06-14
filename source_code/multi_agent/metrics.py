@@ -5,6 +5,8 @@ from dataclasses import asdict, dataclass, field
 
 from multi_agent.protocol import Message
 
+TOKEN_COUNT_METHOD = "char_approx_4"
+
 
 @dataclass
 class MetricsSnapshot:
@@ -20,7 +22,9 @@ class MetricsSnapshot:
     protocol_event_count: int = 0
     protocol_char_count: int = 0
     protocol_approx_token_count: int = 0
+    token_count_method: str = TOKEN_COUNT_METHOD
     message_trace: list[dict[str, object]] = field(default_factory=list)
+    non_text_transfer_trace: list[dict[str, object]] = field(default_factory=list)
     orchestrator: str = "sequential"
     elapsed_ms: float = 0.0
 
@@ -32,7 +36,7 @@ class MetricsCollector:
 
     def record_message(self, message: Message) -> None:
         wire = message.to_wire()
-        approx_tokens = max(1, len(wire) // 4)
+        approx_tokens = _count_tokens(wire)
         self.snapshot.message_count += 1
         self.snapshot.char_count += len(wire)
         self.snapshot.approx_token_count += approx_tokens
@@ -52,9 +56,14 @@ class MetricsCollector:
         )
 
     def record_non_text_transfer(self, transfer_type: str, size: int) -> None:
-        _ = transfer_type
         self.snapshot.non_text_transfer_count += 1
         self.snapshot.non_text_transfer_size += size
+        self.snapshot.non_text_transfer_trace.append(
+            {
+                "transfer_type": transfer_type,
+                "size": size,
+            }
+        )
 
     def record_memory_hit(self, memory_id: str) -> None:
         self.snapshot.memory_hit_count += 1
@@ -64,7 +73,7 @@ class MetricsCollector:
         wire = message.to_wire()
         self.snapshot.protocol_event_count += 1
         self.snapshot.protocol_char_count += len(wire)
-        self.snapshot.protocol_approx_token_count += max(1, len(wire) // 4)
+        self.snapshot.protocol_approx_token_count += _count_tokens(wire)
 
     def set_orchestrator(self, name: str) -> None:
         self.snapshot.orchestrator = name
@@ -72,3 +81,7 @@ class MetricsCollector:
     def finish(self) -> dict[str, object]:
         self.snapshot.elapsed_ms = round((time.perf_counter() - self._started_at) * 1000, 3)
         return asdict(self.snapshot)
+
+
+def _count_tokens(text: str) -> int:
+    return max(1, len(text) // 4)

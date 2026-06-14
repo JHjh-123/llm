@@ -5,7 +5,7 @@
       "avg_messages": 4.0,
       "avg_chars": 664.0,
       "avg_approx_tokens": 164.0,
-      "avg_elapsed_ms": 33.129,
+      "avg_elapsed_ms": 26.759,
       "avg_memory_hits": 0.5,
       "avg_non_text_transfers": 2.5,
       "avg_protocol_events": 0.0,
@@ -15,9 +15,9 @@
     "structured": {
       "runs": 2,
       "avg_messages": 4.0,
-      "avg_chars": 2242.5,
+      "avg_chars": 2243.5,
       "avg_approx_tokens": 559.5,
-      "avg_elapsed_ms": 28.31,
+      "avg_elapsed_ms": 26.777,
       "avg_memory_hits": 1.5,
       "avg_non_text_transfers": 3.0,
       "avg_protocol_events": 5.0,
@@ -29,7 +29,7 @@
   "runs": [
     {
       "task": "Design a structured protocol for three agents to solve a document summarization task.",
-      "task_id": "task_82325d91e63a",
+      "task_id": "task_1dcc9826f6c8",
       "mode": "text",
       "final": "- Completed: Task:\n- Captured metrics\n- Stored reusable memory",
       "metrics": {
@@ -39,7 +39,7 @@
         "char_count": 664,
         "approx_token_count": 164,
         "non_text_transfer_count": 2,
-        "non_text_transfer_size": 1229,
+        "non_text_transfer_size": 1267,
         "memory_hit_count": 0,
         "memory_hit_ids": [],
         "protocol_event_count": 0,
@@ -47,7 +47,7 @@
         "protocol_approx_token_count": 0,
         "message_trace": [
           {
-            "message_id": "msg_743aad00e5f5",
+            "message_id": "msg_2409ad4e5955",
             "parent_id": null,
             "from": "planner",
             "to": "researcher",
@@ -59,8 +59,8 @@
             "approx_tokens": 54
           },
           {
-            "message_id": "msg_6ec1ee7158c1",
-            "parent_id": "msg_743aad00e5f5",
+            "message_id": "msg_26019d38f6d3",
+            "parent_id": "msg_2409ad4e5955",
             "from": "researcher",
             "to": "executor",
             "mode": "text",
@@ -71,8 +71,8 @@
             "approx_tokens": 37
           },
           {
-            "message_id": "msg_de134103cee8",
-            "parent_id": "msg_6ec1ee7158c1",
+            "message_id": "msg_fe4c5d2d2357",
+            "parent_id": "msg_26019d38f6d3",
             "from": "executor",
             "to": "summarizer",
             "mode": "text",
@@ -83,8 +83,8 @@
             "approx_tokens": 41
           },
           {
-            "message_id": "msg_440aa8d7f7ca",
-            "parent_id": "msg_de134103cee8",
+            "message_id": "msg_dcbb37afa23f",
+            "parent_id": "msg_fe4c5d2d2357",
             "from": "summarizer",
             "to": "user",
             "mode": "text",
@@ -95,25 +95,25 @@
             "approx_tokens": 32
           }
         ],
-        "orchestrator": "langgraph",
-        "elapsed_ms": 38.001
+        "orchestrator": "sequential",
+        "elapsed_ms": 26.427
       },
       "protocol": [],
       "round": 1
     },
     {
       "task": "Design a structured protocol for three agents to solve a document summarization task.",
-      "task_id": "task_ea2d24afe234",
+      "task_id": "task_a444a7a25898",
       "mode": "structured",
       "final": "- Completed: Task: - Captured metrics - Stored reusable memory",
       "metrics": {
         "mode": "structured",
         "task": "Design a structured protocol for three agents to solve a document summarization task.",
         "message_count": 4,
-        "char_count": 2228,
+        "char_count": 2230,
         "approx_token_count": 556,
         "non_text_transfer_count": 3,
-        "non_text_transfer_size": 1528,
+        "non_text_transfer_size": 1566,
         "memory_hit_count": 1,
         "memory_hit_ids": [
           "eb3e9601c734"
@@ -123,7 +123,7 @@
         "protocol_approx_token_count": 415,
         "message_trace": [
           {
-            "message_id": "msg_c762841176b2",
+            "message_id": "msg_007c2a51896a",
             "parent_id": null,
             "from": "planner",
             "to": "researcher",
@@ -135,8 +135,8 @@
             "approx_tokens": 98
           },
           {
-            "message_id": "msg_ed490ffffce4",
-            "parent_id": "msg_c762841176b2",
+            "message_id": "msg_04415b2b297d",
+            "parent_id": "msg_007c2a51896a",
             "from": "researcher",
             "to": "executor",
             "mode": "structured",
@@ -149,8 +149,8 @@
             "approx_tokens": 128
           },
           {
-            "message_id": "msg_cf6dee41894c",
-            "parent_id": "msg_ed490ffffce4",
+            "message_id": "msg_4dcb465f0bd1",
+            "parent_id": "msg_04415b2b297d",
             "from": "executor",
             "to": "summarizer",
             "mode": "structured",
@@ -165,7 +165,7 @@
               "tool_result": {
                 "task_words": 13,
                 "finding_chars": 76,
-                "workspace_files_seen": 2,
+                "workspace_files_seen": 3,
                 "memory_tool_hits": 1,
                 "metrics": {
                   "count": 2,
@@ -178,12 +178,12 @@
                 "reusable": true
               }
             },
-            "chars": 849,
+            "chars": 850,
             "approx_tokens": 212
           },
           {
-            "message_id": "msg_ac4482469336",
-            "parent_id": "msg_cf6dee41894c",
+            "message_id": "msg_59bec70a446a",
+            "parent_id": "msg_4dcb465f0bd1",
             "from": "summarizer",
             "to": "user",
             "mode": "structured",
@@ -192,25 +192,25 @@
               "eb3e9601c734"
             ],
             "state": {},
-            "chars": 472,
+            "chars": 473,
             "approx_tokens": 118
           }
         ],
-        "orchestrator": "langgraph",
-        "elapsed_ms": 29.783
+        "orchestrator": "sequential",
+        "elapsed_ms": 28.167
       },
       "protocol": [
-        "{\"f\":\"runtime\",\"mid\":\"msg_8301416f4aa7\",\"p\":{\"a\":\"protocol_map\",\"fields\":{\"a\":\"action\",\"in\":\"compact inputs\",\"out\":\"compact output\",\"refs\":\"memory or state references\",\"state\":\"non-text state metadata\"},\"out\":\"protocol mapping negotiated\",\"refs\":[],\"version\":\"agent-msg/v1\"},\"pid\":null,\"s\":\"agent-msg/v1\",\"t\":\"all\",\"tid\":\"task_ea2d24afe234\",\"ts\":1781426542.699201}",
-        "{\"f\":\"planner\",\"mid\":\"msg_d95c18557bde\",\"p\":{\"a\":\"handshake\",\"accept\":[\"text\",\"structured\"],\"cap\":[\"planning\",\"task_decomposition\",\"llm_chat\"],\"out\":\"planner ready\",\"refs\":[],\"version\":\"agent-msg/v1\"},\"pid\":null,\"s\":\"agent-msg/v1\",\"t\":\"runtime\",\"tid\":\"task_ea2d24afe234\",\"ts\":1781426542.699217}",
-        "{\"f\":\"researcher\",\"mid\":\"msg_67fe33c853d8\",\"p\":{\"a\":\"handshake\",\"accept\":[\"text\",\"structured\"],\"cap\":[\"memory_search\",\"analysis\",\"llm_chat\"],\"out\":\"researcher ready\",\"refs\":[],\"version\":\"agent-msg/v1\"},\"pid\":null,\"s\":\"agent-msg/v1\",\"t\":\"runtime\",\"tid\":\"task_ea2d24afe234\",\"ts\":1781426542.699245}",
-        "{\"f\":\"executor\",\"mid\":\"msg_623e2e897023\",\"p\":{\"a\":\"handshake\",\"accept\":[\"text\",\"structured\"],\"cap\":[\"codeact_python\",\"read_file\",\"search_files\",\"load_json\",\"load_csv\",\"make_markdown_table\",\"compute_numeric_metrics\",\"search_memory\",\"memory_write\",\"embedding_state\",\"llm_chat\"],\"out\":\"executor ready\",\"refs\":[],\"version\":\"agent-msg/v1\"},\"pid\":null,\"s\":\"agent-msg/v1\",\"t\":\"runtime\",\"tid\":\"task_ea2d24afe234\",\"ts\":1781426542.699271}",
-        "{\"f\":\"summarizer\",\"mid\":\"msg_bfe8b646c64f\",\"p\":{\"a\":\"handshake\",\"accept\":[\"text\",\"structured\"],\"cap\":[\"summarization\",\"llm_chat\"],\"out\":\"summarizer ready\",\"refs\":[],\"version\":\"agent-msg/v1\"},\"pid\":null,\"s\":\"agent-msg/v1\",\"t\":\"runtime\",\"tid\":\"task_ea2d24afe234\",\"ts\":1781426542.699297}"
+        "{\"f\":\"runtime\",\"mid\":\"msg_ee4fa6d27935\",\"p\":{\"a\":\"protocol_map\",\"fields\":{\"a\":\"action\",\"in\":\"compact inputs\",\"out\":\"compact output\",\"refs\":\"memory or state references\",\"state\":\"non-text state metadata\"},\"out\":\"protocol mapping negotiated\",\"refs\":[],\"version\":\"agent-msg/v1\"},\"pid\":null,\"s\":\"agent-msg/v1\",\"t\":\"all\",\"tid\":\"task_a444a7a25898\",\"ts\":1781434473.281102}",
+        "{\"f\":\"planner\",\"mid\":\"msg_8485042c2cfc\",\"p\":{\"a\":\"handshake\",\"accept\":[\"text\",\"structured\"],\"cap\":[\"planning\",\"task_decomposition\",\"llm_chat\"],\"out\":\"planner ready\",\"refs\":[],\"version\":\"agent-msg/v1\"},\"pid\":null,\"s\":\"agent-msg/v1\",\"t\":\"runtime\",\"tid\":\"task_a444a7a25898\",\"ts\":1781434473.281115}",
+        "{\"f\":\"researcher\",\"mid\":\"msg_57d7e8b086ab\",\"p\":{\"a\":\"handshake\",\"accept\":[\"text\",\"structured\"],\"cap\":[\"memory_search\",\"analysis\",\"llm_chat\"],\"out\":\"researcher ready\",\"refs\":[],\"version\":\"agent-msg/v1\"},\"pid\":null,\"s\":\"agent-msg/v1\",\"t\":\"runtime\",\"tid\":\"task_a444a7a25898\",\"ts\":1781434473.281125}",
+        "{\"f\":\"executor\",\"mid\":\"msg_cfe3fb1f02de\",\"p\":{\"a\":\"handshake\",\"accept\":[\"text\",\"structured\"],\"cap\":[\"codeact_python\",\"read_file\",\"search_files\",\"load_json\",\"load_csv\",\"make_markdown_table\",\"compute_numeric_metrics\",\"search_memory\",\"memory_write\",\"embedding_state\",\"llm_chat\"],\"out\":\"executor ready\",\"refs\":[],\"version\":\"agent-msg/v1\"},\"pid\":null,\"s\":\"agent-msg/v1\",\"t\":\"runtime\",\"tid\":\"task_a444a7a25898\",\"ts\":1781434473.281134}",
+        "{\"f\":\"summarizer\",\"mid\":\"msg_711dadaf96e8\",\"p\":{\"a\":\"handshake\",\"accept\":[\"text\",\"structured\"],\"cap\":[\"summarization\",\"llm_chat\"],\"out\":\"summarizer ready\",\"refs\":[],\"version\":\"agent-msg/v1\"},\"pid\":null,\"s\":\"agent-msg/v1\",\"t\":\"runtime\",\"tid\":\"task_a444a7a25898\",\"ts\":1781434473.281142}"
       ],
       "round": 1
     },
     {
       "task": "Reuse memory from the previous protocol design task and evaluate communication overhead.",
-      "task_id": "task_534c2df5dc20",
+      "task_id": "task_27a84e95e930",
       "mode": "text",
       "final": "- Completed: Task:\n- Captured metrics\n- Stored reusable memory",
       "metrics": {
@@ -220,7 +220,7 @@
         "char_count": 664,
         "approx_token_count": 164,
         "non_text_transfer_count": 3,
-        "non_text_transfer_size": 1531,
+        "non_text_transfer_size": 1569,
         "memory_hit_count": 1,
         "memory_hit_ids": [
           "eb3e9601c734"
@@ -230,7 +230,7 @@
         "protocol_approx_token_count": 0,
         "message_trace": [
           {
-            "message_id": "msg_adedc22607dd",
+            "message_id": "msg_6882479b4dd4",
             "parent_id": null,
             "from": "planner",
             "to": "researcher",
@@ -242,8 +242,8 @@
             "approx_tokens": 54
           },
           {
-            "message_id": "msg_de57f9d41838",
-            "parent_id": "msg_adedc22607dd",
+            "message_id": "msg_3e9f66d649a4",
+            "parent_id": "msg_6882479b4dd4",
             "from": "researcher",
             "to": "executor",
             "mode": "text",
@@ -254,8 +254,8 @@
             "approx_tokens": 37
           },
           {
-            "message_id": "msg_1867b4c9e450",
-            "parent_id": "msg_de57f9d41838",
+            "message_id": "msg_c94565cf1665",
+            "parent_id": "msg_3e9f66d649a4",
             "from": "executor",
             "to": "summarizer",
             "mode": "text",
@@ -266,8 +266,8 @@
             "approx_tokens": 41
           },
           {
-            "message_id": "msg_045cd419c3f7",
-            "parent_id": "msg_1867b4c9e450",
+            "message_id": "msg_89c37d0e0bfb",
+            "parent_id": "msg_c94565cf1665",
             "from": "summarizer",
             "to": "user",
             "mode": "text",
@@ -278,15 +278,15 @@
             "approx_tokens": 32
           }
         ],
-        "orchestrator": "langgraph",
-        "elapsed_ms": 28.256
+        "orchestrator": "sequential",
+        "elapsed_ms": 27.091
       },
       "protocol": [],
       "round": 1
     },
     {
       "task": "Reuse memory from the previous protocol design task and evaluate communication overhead.",
-      "task_id": "task_edf6a68f4c16",
+      "task_id": "task_87957c1519f3",
       "mode": "structured",
       "final": "- Completed: Task: - Captured metrics - Stored reusable memory",
       "metrics": {
@@ -296,7 +296,7 @@
         "char_count": 2257,
         "approx_token_count": 563,
         "non_text_transfer_count": 3,
-        "non_text_transfer_size": 1836,
+        "non_text_transfer_size": 1874,
         "memory_hit_count": 2,
         "memory_hit_ids": [
           "9ebef54804c5",
@@ -307,7 +307,7 @@
         "protocol_approx_token_count": 415,
         "message_trace": [
           {
-            "message_id": "msg_448cbd9ee424",
+            "message_id": "msg_e26ecbf7825a",
             "parent_id": null,
             "from": "planner",
             "to": "researcher",
@@ -319,8 +319,8 @@
             "approx_tokens": 99
           },
           {
-            "message_id": "msg_8d0c1eed7ce5",
-            "parent_id": "msg_448cbd9ee424",
+            "message_id": "msg_a04bcf42e73f",
+            "parent_id": "msg_e26ecbf7825a",
             "from": "researcher",
             "to": "executor",
             "mode": "structured",
@@ -334,8 +334,8 @@
             "approx_tokens": 132
           },
           {
-            "message_id": "msg_5a5202b96809",
-            "parent_id": "msg_8d0c1eed7ce5",
+            "message_id": "msg_a187a94bfdc0",
+            "parent_id": "msg_a04bcf42e73f",
             "from": "executor",
             "to": "summarizer",
             "mode": "structured",
@@ -350,7 +350,7 @@
               "tool_result": {
                 "task_words": 12,
                 "finding_chars": 76,
-                "workspace_files_seen": 2,
+                "workspace_files_seen": 3,
                 "memory_tool_hits": 2,
                 "metrics": {
                   "count": 2,
@@ -367,8 +367,8 @@
             "approx_tokens": 213
           },
           {
-            "message_id": "msg_a7293b0f1585",
-            "parent_id": "msg_5a5202b96809",
+            "message_id": "msg_b1fef9e80f39",
+            "parent_id": "msg_a187a94bfdc0",
             "from": "summarizer",
             "to": "user",
             "mode": "structured",
@@ -381,15 +381,15 @@
             "approx_tokens": 119
           }
         ],
-        "orchestrator": "langgraph",
-        "elapsed_ms": 26.837
+        "orchestrator": "sequential",
+        "elapsed_ms": 25.387
       },
       "protocol": [
-        "{\"f\":\"runtime\",\"mid\":\"msg_367c5e5b0267\",\"p\":{\"a\":\"protocol_map\",\"fields\":{\"a\":\"action\",\"in\":\"compact inputs\",\"out\":\"compact output\",\"refs\":\"memory or state references\",\"state\":\"non-text state metadata\"},\"out\":\"protocol mapping negotiated\",\"refs\":[],\"version\":\"agent-msg/v1\"},\"pid\":null,\"s\":\"agent-msg/v1\",\"t\":\"all\",\"tid\":\"task_edf6a68f4c16\",\"ts\":1781426542.757467}",
-        "{\"f\":\"planner\",\"mid\":\"msg_ee368a670095\",\"p\":{\"a\":\"handshake\",\"accept\":[\"text\",\"structured\"],\"cap\":[\"planning\",\"task_decomposition\",\"llm_chat\"],\"out\":\"planner ready\",\"refs\":[],\"version\":\"agent-msg/v1\"},\"pid\":null,\"s\":\"agent-msg/v1\",\"t\":\"runtime\",\"tid\":\"task_edf6a68f4c16\",\"ts\":1781426542.757479}",
-        "{\"f\":\"researcher\",\"mid\":\"msg_ccfb6d8ac739\",\"p\":{\"a\":\"handshake\",\"accept\":[\"text\",\"structured\"],\"cap\":[\"memory_search\",\"analysis\",\"llm_chat\"],\"out\":\"researcher ready\",\"refs\":[],\"version\":\"agent-msg/v1\"},\"pid\":null,\"s\":\"agent-msg/v1\",\"t\":\"runtime\",\"tid\":\"task_edf6a68f4c16\",\"ts\":1781426542.757489}",
-        "{\"f\":\"executor\",\"mid\":\"msg_c8f51b984140\",\"p\":{\"a\":\"handshake\",\"accept\":[\"text\",\"structured\"],\"cap\":[\"codeact_python\",\"read_file\",\"search_files\",\"load_json\",\"load_csv\",\"make_markdown_table\",\"compute_numeric_metrics\",\"search_memory\",\"memory_write\",\"embedding_state\",\"llm_chat\"],\"out\":\"executor ready\",\"refs\":[],\"version\":\"agent-msg/v1\"},\"pid\":null,\"s\":\"agent-msg/v1\",\"t\":\"runtime\",\"tid\":\"task_edf6a68f4c16\",\"ts\":1781426542.757499}",
-        "{\"f\":\"summarizer\",\"mid\":\"msg_06e9d938423d\",\"p\":{\"a\":\"handshake\",\"accept\":[\"text\",\"structured\"],\"cap\":[\"summarization\",\"llm_chat\"],\"out\":\"summarizer ready\",\"refs\":[],\"version\":\"agent-msg/v1\"},\"pid\":null,\"s\":\"agent-msg/v1\",\"t\":\"runtime\",\"tid\":\"task_edf6a68f4c16\",\"ts\":1781426542.757508}"
+        "{\"f\":\"runtime\",\"mid\":\"msg_84c4c754986c\",\"p\":{\"a\":\"protocol_map\",\"fields\":{\"a\":\"action\",\"in\":\"compact inputs\",\"out\":\"compact output\",\"refs\":\"memory or state references\",\"state\":\"non-text state metadata\"},\"out\":\"protocol mapping negotiated\",\"refs\":[],\"version\":\"agent-msg/v1\"},\"pid\":null,\"s\":\"agent-msg/v1\",\"t\":\"all\",\"tid\":\"task_87957c1519f3\",\"ts\":1781434473.336555}",
+        "{\"f\":\"planner\",\"mid\":\"msg_3191a5bbf44a\",\"p\":{\"a\":\"handshake\",\"accept\":[\"text\",\"structured\"],\"cap\":[\"planning\",\"task_decomposition\",\"llm_chat\"],\"out\":\"planner ready\",\"refs\":[],\"version\":\"agent-msg/v1\"},\"pid\":null,\"s\":\"agent-msg/v1\",\"t\":\"runtime\",\"tid\":\"task_87957c1519f3\",\"ts\":1781434473.336567}",
+        "{\"f\":\"researcher\",\"mid\":\"msg_b17ad0e2a553\",\"p\":{\"a\":\"handshake\",\"accept\":[\"text\",\"structured\"],\"cap\":[\"memory_search\",\"analysis\",\"llm_chat\"],\"out\":\"researcher ready\",\"refs\":[],\"version\":\"agent-msg/v1\"},\"pid\":null,\"s\":\"agent-msg/v1\",\"t\":\"runtime\",\"tid\":\"task_87957c1519f3\",\"ts\":1781434473.336576}",
+        "{\"f\":\"executor\",\"mid\":\"msg_4f849ffad046\",\"p\":{\"a\":\"handshake\",\"accept\":[\"text\",\"structured\"],\"cap\":[\"codeact_python\",\"read_file\",\"search_files\",\"load_json\",\"load_csv\",\"make_markdown_table\",\"compute_numeric_metrics\",\"search_memory\",\"memory_write\",\"embedding_state\",\"llm_chat\"],\"out\":\"executor ready\",\"refs\":[],\"version\":\"agent-msg/v1\"},\"pid\":null,\"s\":\"agent-msg/v1\",\"t\":\"runtime\",\"tid\":\"task_87957c1519f3\",\"ts\":1781434473.336584}",
+        "{\"f\":\"summarizer\",\"mid\":\"msg_880d6099b1cb\",\"p\":{\"a\":\"handshake\",\"accept\":[\"text\",\"structured\"],\"cap\":[\"summarization\",\"llm_chat\"],\"out\":\"summarizer ready\",\"refs\":[],\"version\":\"agent-msg/v1\"},\"pid\":null,\"s\":\"agent-msg/v1\",\"t\":\"runtime\",\"tid\":\"task_87957c1519f3\",\"ts\":1781434473.336593}"
       ],
       "round": 1
     }
@@ -398,7 +398,7 @@
     {
       "memory_id": "eb3e9601c734",
       "source_agent": "executor",
-      "created_at": 1781426542.7206306,
+      "created_at": 1781434473.3024435,
       "task_topic": "Design a structured protocol for three agents to solve a document summarization task.",
       "summary": "Answer: completed the requested work for Task:; reusable fact saved for later related tasks.",
       "tags": [
@@ -475,7 +475,7 @@
     {
       "memory_id": "9ebef54804c5",
       "source_agent": "executor",
-      "created_at": 1781426542.7788684,
+      "created_at": 1781434473.357014,
       "task_topic": "Reuse memory from the previous protocol design task and evaluate communication overhead.",
       "summary": "Answer: completed the requested work for Task:; reusable fact saved for later related tasks.",
       "tags": [
