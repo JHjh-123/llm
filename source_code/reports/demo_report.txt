@@ -1,0 +1,87 @@
+# Multi-Agent Communication Demo Report
+
+- Generated at: 2026-06-18T11:41:50
+- Rounds: 1
+- OS: openEuler 24.03 (LTS-SP1)
+- Python: 3.13.13
+- LLM backend: ollama
+- LLM model: qwen3:8b
+- Embedding backend: hash
+- Embedding model: hash
+- Orchestrator: sequential
+- Token count method: unicode_heuristic
+- Memory path: data/memory.sqlite
+- State path: data/state.sqlite
+
+## Demo Goal
+
+展示多 Agent 在纯文本通信与结构化通信下的协作流程，并比较消息数、通信 token、耗时、记忆命中、非文本状态传递等指标。
+
+## Requirement Coverage
+
+| Requirement | Current Status | Evidence |
+| --- | --- | --- |
+| 3+ Agent collaboration | Done | Planner, Researcher, Executor, Summarizer |
+| Text vs structured A/B | Done | Same tasks run in both modes |
+| Formal protocol | Done | message_id, task_id, parent_id, message type, handshake, capability discovery, error code table |
+| LangGraph orchestration | Done when ORCHESTRATOR=langgraph | Metrics record orchestrator name |
+| Shared memory | Done | SQLite memory store |
+| Real embedding | Done when EMBEDDING_BACKEND=ollama | bge-m3 returns 1024-d vectors |
+| Non-text state transfer | Done | StateStore saves embedding/tool result and protocol carries state refs |
+| CodeAct tools | Done | restricted Python tool execution |
+| Reproducible metrics | Done | JSON and Markdown reports generated with environment metadata |
+
+## A/B Summary
+
+| Metric | Text | Structured |
+| --- | ---: | ---: |
+| Runs | 6 | 6 |
+| Avg messages | 4.0 | 4.0 |
+| Avg chars | 4228.833 | 2439.333 |
+| Std chars | 121.586 | 28.709 |
+| Avg approx tokens | 1270.667 | 1012.333 |
+| Std approx tokens | 34.316 | 23.935 |
+| Min approx tokens | 1236.0 | 983.0 |
+| Max approx tokens | 1333.0 | 1052.0 |
+| Avg elapsed ms | 6178.048 | 5853.3 |
+| Std elapsed ms | 107.96 | 307.689 |
+| Avg memory hits | 2.333 | 2.667 |
+| Avg non-text transfers | 2.833 | 3.0 |
+| Avg non-text transfer size | 3833.333 | 2987.333 |
+| Avg protocol events | 0.0 | 5.0 |
+| Avg protocol approx tokens | 0.0 | 1832.833 |
+
+## Main Finding
+
+- Structured application-message token delta: **-20.33%**
+- Current conclusion: **有优势**
+- Protocol negotiation overhead is reported separately from application messages.
+- Token counts use the configured method shown above; set TOKEN_COUNT_METHOD=tiktoken when tiktoken is installed.
+- State records persisted: **24**
+- Shared memories persisted: **12**
+- Avg memory links: **3.75**, total access count: **51**
+
+## Agent Trace Example
+
+- Task: Design a structured protocol for three agents to solve a document summarization task.
+
+| From | To | Action | Refs | State Keys | Approx Tokens |
+| --- | --- | --- | ---: | --- | ---: |
+| planner | researcher | plan | 0 |  | 178 |
+| researcher | executor | research | 1 |  | 235 |
+| executor | summarizer | execute | 3 | embedding_ref, embedding_dim, tool_result_ref, tool_ok, sizes | 336 |
+| summarizer | user | summarize | 3 |  | 255 |
+
+## Non-Text State Exchange Example
+
+| State ID | Type | Producer | Size Bytes | Metadata |
+| --- | --- | --- | ---: | --- |
+| state_9ccf084645f0 | embedding | executor | 481 | {"dim": 64, "memory_id": "b2d546cfef71", "usage": "semantic_retrieval"} |
+| state_e0d758e3698c | codeact_result | executor | 1926 | {"ok": true, "tool": "codeact/python", "usage": "execution_evidence"} |
+
+## Final Submission Checklist
+
+- Run at least 10 rounds on openEuler 24.03-LTS-SP3 and keep the generated JSON/Markdown artifacts.
+- Use EMBEDDING_BACKEND=ollama and EMBEDDING_TIMEOUT=60 or higher for the formal embedding experiment.
+- Use TOKEN_COUNT_METHOD=tiktoken if the selected model tokenizer is available; otherwise report character and heuristic token counts together.
+- Include docs/system_design.md, docs/deployment.md, docs/experiment_report.md, reports/demo_report.md, and the demo video.

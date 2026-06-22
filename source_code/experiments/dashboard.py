@@ -96,7 +96,10 @@ def run_comparison(task: str, memory_mode: str) -> dict[str, Any]:
 
     if memory_mode == "shared":
         memory_path = _tmp_memory_path(run_id, "shared")
-        with _temporary_env({"MEMORY_PATH": str(memory_path), "MEMORY_RESET": "1"}):
+        state_path = _tmp_state_path(run_id, "shared")
+        with _temporary_env(
+            {"MEMORY_PATH": str(memory_path), "MEMORY_RESET": "1", "STATE_PATH": str(state_path), "STATE_RESET": "1"}
+        ):
             runner = ExperimentRunner()
             text_run = runner.run_task(task, "text")
             structured_run = runner.run_task(task, "structured")
@@ -125,13 +128,20 @@ def run_comparison(task: str, memory_mode: str) -> dict[str, Any]:
 
 def _run_isolated(task: str, mode: str, run_id: str) -> dict[str, Any]:
     memory_path = _tmp_memory_path(run_id, mode)
-    with _temporary_env({"MEMORY_PATH": str(memory_path), "MEMORY_RESET": "1"}):
+    state_path = _tmp_state_path(run_id, mode)
+    with _temporary_env(
+        {"MEMORY_PATH": str(memory_path), "MEMORY_RESET": "1", "STATE_PATH": str(state_path), "STATE_RESET": "1"}
+    ):
         runner = ExperimentRunner()
         return runner.run_task(task, mode)
 
 
 def _tmp_memory_path(run_id: str, suffix: str) -> Path:
     return Path(tempfile.gettempdir()) / f"llm_dashboard_{run_id}_{suffix}.sqlite"
+
+
+def _tmp_state_path(run_id: str, suffix: str) -> Path:
+    return Path(tempfile.gettempdir()) / f"llm_dashboard_{run_id}_{suffix}_state.sqlite"
 
 
 def _compare(text: dict[str, Any], structured: dict[str, Any]) -> dict[str, Any]:

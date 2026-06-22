@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import sqlite3
 import time
 from dataclasses import asdict, dataclass
@@ -21,6 +22,9 @@ class MemoryRecord:
     summary: str
     tags: list[str]
     embedding: list[float]
+    keywords: list[str]
+    links: list[str]
+    access_count: int = 0
 
 
 class SharedMemory:
@@ -49,6 +53,9 @@ class SharedMemory:
     ) -> MemoryRecord:
         vector = embedding or self.embed(summary)
         memory_id = hashlib.sha1(f"{source_agent}:{task_topic}:{summary}".encode("utf-8")).hexdigest()[:12]
+        graph_enabled = _env_bool("MEMORY_GRAPH_ENABLED", default=True)
+        keywords = sorted(_terms(f"{task_topic} {summary}").union(tags))[:16] if graph_enabled else []
+        links = self._related_memory_ids(vector, keywords, exclude_id=memory_id) if graph_enabled else []
         record = MemoryRecord(
             memory_id=memory_id,
             source_agent=source_agent,
@@ -57,12 +64,17 @@ class SharedMemory:
             summary=summary,
             tags=tags,
             embedding=vector,
+            keywords=keywords,
+            links=links,
         )
         self._conn.execute(
             """
             INSERT OR REPLACE INTO memories
-            (memory_id, source_agent, created_at, task_topic, summary, tags, embedding, embedding_dim)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (
+                memory_id, source_agent, created_at, task_topic, summary,
+                tags, embedding, embedding_dim, keywords, links, access_count
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT access_count FROM memories WHERE memory_id = ?), 0))
             """,
             (
                 record.memory_id,
@@ -73,8 +85,12 @@ class SharedMemory:
                 json.dumps(record.tags, ensure_ascii=False),
                 json.dumps(record.embedding),
                 len(record.embedding),
+                json.dumps(record.keywords, ensure_ascii=False),
+                json.dumps(record.links, ensure_ascii=False),
+                record.memory_id,
             ),
         )
+        self._upsert_links(record.memory_id, record.links)
         self._conn.commit()
         return record
 
@@ -85,15 +101,20 @@ class SharedMemory:
 
         for record in self._all_records():
             tag_score = len(query_terms.intersection(record.tags)) * 0.2
+            graph_enabled = _env_bool("MEMORY_GRAPH_ENABLED", default=True)
+            keyword_score = len(query_terms.intersection(record.keywords)) * 0.1 if graph_enabled else 0.0
             text_terms = _terms(f"{record.task_topic} {record.summary}")
             text_score = len(query_terms.intersection(text_terms)) * 0.05
             vector_score = _cosine(query_embedding, record.embedding)
-            score = vector_score + tag_score + text_score
+            link_score = len(record.links) * 0.01 if graph_enabled else 0.0
+            score = vector_score + tag_score + keyword_score + text_score + link_score
             if score > 0.15:
                 scored.append((score, record))
 
         scored.sort(key=lambda item: item[0], reverse=True)
-        return [record for _, record in scored[:limit]]
+        records = [record for _, record in scored[:limit]]
+        self._mark_accessed([record.memory_id for record in records])
+        return records
 
     def embed(self, text: str) -> list[float]:
         return self.embedding_provider.embed(text)
@@ -115,23 +136,79 @@ class SharedMemory:
                 summary TEXT NOT NULL,
                 tags TEXT NOT NULL,
                 embedding TEXT NOT NULL,
-                embedding_dim INTEGER NOT NULL
+                embedding_dim INTEGER NOT NULL,
+                keywords TEXT NOT NULL DEFAULT '[]',
+                links TEXT NOT NULL DEFAULT '[]',
+                access_count INTEGER NOT NULL DEFAULT 0
+            )
+            """
+        )
+        self._ensure_column("memories", "keywords", "TEXT NOT NULL DEFAULT '[]'")
+        self._ensure_column("memories", "links", "TEXT NOT NULL DEFAULT '[]'")
+        self._ensure_column("memories", "access_count", "INTEGER NOT NULL DEFAULT 0")
+        self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS memory_links (
+                source_memory_id TEXT NOT NULL,
+                target_memory_id TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                PRIMARY KEY (source_memory_id, target_memory_id)
             )
             """
         )
         self._conn.execute("CREATE INDEX IF NOT EXISTS idx_memories_source ON memories(source_agent)")
         self._conn.execute("CREATE INDEX IF NOT EXISTS idx_memories_created ON memories(created_at)")
+        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_memory_links_source ON memory_links(source_memory_id)")
         self._conn.commit()
 
     def _all_records(self) -> list[MemoryRecord]:
         rows = self._conn.execute(
             """
-            SELECT memory_id, source_agent, created_at, task_topic, summary, tags, embedding
+            SELECT memory_id, source_agent, created_at, task_topic, summary, tags, embedding, keywords, links, access_count
             FROM memories
             ORDER BY created_at ASC
             """
         ).fetchall()
         return [_row_to_record(row) for row in rows]
+
+    def _related_memory_ids(self, embedding: list[float], keywords: list[str], exclude_id: str) -> list[str]:
+        scored = []
+        keyword_set = set(keywords)
+        for record in self._all_records():
+            if record.memory_id == exclude_id:
+                continue
+            vector_score = _cosine(embedding, record.embedding)
+            keyword_score = len(keyword_set.intersection(record.keywords)) * 0.1
+            tag_score = len(keyword_set.intersection(record.tags)) * 0.05
+            score = vector_score + keyword_score + tag_score
+            if score > 0.2:
+                scored.append((score, record.memory_id))
+        scored.sort(reverse=True)
+        return [memory_id for _, memory_id in scored[:5]]
+
+    def _upsert_links(self, source_id: str, target_ids: list[str]) -> None:
+        for target_id in target_ids:
+            self._conn.execute(
+                """
+                INSERT OR IGNORE INTO memory_links (source_memory_id, target_memory_id, created_at)
+                VALUES (?, ?, ?)
+                """,
+                (source_id, target_id, time.time()),
+            )
+
+    def _mark_accessed(self, memory_ids: list[str]) -> None:
+        if not memory_ids:
+            return
+        self._conn.executemany(
+            "UPDATE memories SET access_count = access_count + 1 WHERE memory_id = ?",
+            [(memory_id,) for memory_id in memory_ids],
+        )
+        self._conn.commit()
+
+    def _ensure_column(self, table: str, column: str, definition: str) -> None:
+        columns = {row["name"] for row in self._conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        if column not in columns:
+            self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
 def _row_to_record(row: sqlite3.Row) -> MemoryRecord:
@@ -143,11 +220,18 @@ def _row_to_record(row: sqlite3.Row) -> MemoryRecord:
         summary=str(row["summary"]),
         tags=list(json.loads(row["tags"])),
         embedding=[float(value) for value in json.loads(row["embedding"])],
+        keywords=list(json.loads(row["keywords"])) if "keywords" in row.keys() else [],
+        links=list(json.loads(row["links"])) if "links" in row.keys() else [],
+        access_count=int(row["access_count"]) if "access_count" in row.keys() else 0,
     )
 
 
 def _terms(text: str) -> set[str]:
-    return {token.strip(".,:;!?()[]{}\"'").lower() for token in text.split() if token.strip()}
+    terms = set()
+    for token in re.findall(r"[\w\u4e00-\u9fff]+", text.lower()):
+        if len(token) > 1 or "\u4e00" <= token <= "\u9fff":
+            terms.add(token)
+    return terms
 
 
 def _cosine(left: list[float], right: list[float]) -> float:
@@ -156,3 +240,10 @@ def _cosine(left: list[float], right: list[float]) -> float:
     left_norm = math.sqrt(sum(value * value for value in left)) or 1.0
     right_norm = math.sqrt(sum(value * value for value in right)) or 1.0
     return sum(a * b for a, b in zip(left, right)) / (left_norm * right_norm)
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}

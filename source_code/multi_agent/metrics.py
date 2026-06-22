@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import os
+import re
 import time
 from dataclasses import asdict, dataclass, field
 
 from multi_agent.protocol import Message
 
-TOKEN_COUNT_METHOD = "char_approx_4"
+TOKEN_COUNT_METHOD = os.getenv("TOKEN_COUNT_METHOD", "unicode_heuristic")
 
 
 @dataclass
@@ -25,6 +27,7 @@ class MetricsSnapshot:
     token_count_method: str = TOKEN_COUNT_METHOD
     message_trace: list[dict[str, object]] = field(default_factory=list)
     non_text_transfer_trace: list[dict[str, object]] = field(default_factory=list)
+    state_ref_ids: list[str] = field(default_factory=list)
     orchestrator: str = "sequential"
     elapsed_ms: float = 0.0
 
@@ -55,15 +58,14 @@ class MetricsCollector:
             }
         )
 
-    def record_non_text_transfer(self, transfer_type: str, size: int) -> None:
+    def record_non_text_transfer(self, transfer_type: str, size: int, state_id: str | None = None) -> None:
         self.snapshot.non_text_transfer_count += 1
         self.snapshot.non_text_transfer_size += size
-        self.snapshot.non_text_transfer_trace.append(
-            {
-                "transfer_type": transfer_type,
-                "size": size,
-            }
-        )
+        event: dict[str, object] = {"transfer_type": transfer_type, "size": size}
+        if state_id:
+            event["state_id"] = state_id
+            self.snapshot.state_ref_ids.append(state_id)
+        self.snapshot.non_text_transfer_trace.append(event)
 
     def record_memory_hit(self, memory_id: str) -> None:
         self.snapshot.memory_hit_count += 1
@@ -84,4 +86,52 @@ class MetricsCollector:
 
 
 def _count_tokens(text: str) -> int:
-    return max(1, len(text) // 4)
+    method = TOKEN_COUNT_METHOD.lower()
+    if method == "char_approx_4":
+        return max(1, len(text) // 4)
+    if method == "whitespace":
+        return max(1, len(text.split()))
+    if method == "tiktoken":
+        counted = _try_tiktoken(text)
+        if counted is not None:
+            return counted
+    return _unicode_heuristic(text)
+
+
+def _try_tiktoken(text: str) -> int | None:
+    try:
+        import tiktoken  # type: ignore
+
+        encoding = tiktoken.get_encoding(os.getenv("TIKTOKEN_ENCODING", "cl100k_base"))
+        return len(encoding.encode(text))
+    except Exception:
+        return None
+
+
+def _unicode_heuristic(text: str) -> int:
+    tokens = 0
+    ascii_buffer = []
+    for char in text:
+        if "\u4e00" <= char <= "\u9fff":
+            tokens += _flush_ascii(ascii_buffer)
+            ascii_buffer.clear()
+            tokens += 1
+        elif char.isascii() and (char.isalnum() or char in "_-./"):
+            ascii_buffer.append(char)
+        elif char.isspace():
+            tokens += _flush_ascii(ascii_buffer)
+            ascii_buffer.clear()
+        else:
+            tokens += _flush_ascii(ascii_buffer)
+            ascii_buffer.clear()
+            tokens += 1
+    tokens += _flush_ascii(ascii_buffer)
+    return max(1, tokens)
+
+
+def _flush_ascii(buffer: list[str]) -> int:
+    if not buffer:
+        return 0
+    text = "".join(buffer)
+    pieces = [piece for piece in re.split(r"[_\-./]+", text) if piece]
+    return sum(max(1, (len(piece) + 3) // 4) for piece in pieces)

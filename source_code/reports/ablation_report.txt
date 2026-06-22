@@ -1,0 +1,49 @@
+# Multi-Agent Mechanism Ablation Report
+
+- Generated at: 2026-06-17T21:27:23
+- Run ID: 87ef0760b0
+- Rounds: 1
+- Tasks per round: 6
+- OS: openEuler 24.03 (LTS-SP1)
+- LLM backend: ollama
+- LLM model: qwen3:8b
+- Embedding backend: hash
+- Token count method: unicode_heuristic
+
+## Variant Definitions
+
+| Variant | Mode | Enabled Mechanisms |
+| --- | --- | --- |
+| text_baseline | text | protocol/text only |
+| structured_protocol | structured | protocol/text only |
+| structured_state | structured | state refs |
+| structured_memory | structured | state refs, shared memory |
+| structured_memory_graph | structured | state refs, shared memory, memory graph |
+
+## Summary
+
+| Variant | Avg Tokens | Token Delta | Avg Chars | Char Delta | Avg Elapsed ms | Memory Hits | State Transfers | Memory Records | State Records | Avg Links |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| text_baseline | 970.333 | 0.0% | 3314.0 | 0.0% | 5150.401 | 0.0 | 0.0 | 0 | 0 | 0.0 |
+| structured_protocol | 904.0 | -6.84% | 2183.167 | -34.12% | 5250.569 | 0.0 | 0.0 | 0 | 0 | 0.0 |
+| structured_state | 979.0 | 0.89% | 2370.167 | -28.48% | 4944.105 | 0.0 | 2.0 | 0 | 12 | 0.0 |
+| structured_memory | 1005.333 | 3.61% | 2430.0 | -26.67% | 4977.4 | 2.0 | 2.833 | 6 | 12 | 0.0 |
+| structured_memory_graph | 1006.333 | 3.71% | 2429.833 | -26.68% | 4678.729 | 2.0 | 2.833 | 6 | 12 | 2.333 |
+
+## Marginal Contribution
+
+| Step | Token Delta | Elapsed Delta | Memory Hit Delta | State Record Delta | Memory Link Delta |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| text_baseline_to_structured_protocol | -6.84% | 1.94% | 0.0 | 0 | 0.0 |
+| structured_protocol_to_structured_state | 8.3% | -5.84% | 0.0 | 12 | 0.0 |
+| structured_state_to_structured_memory | 2.69% | 0.67% | 2.0 | 0 | 0.0 |
+| structured_memory_to_structured_memory_graph | 0.1% | -6.0% | 0.0 | 0 | 2.333 |
+
+## Interpretation
+
+- `structured_protocol` isolates the benefit of compact protocol encoding.
+- `structured_state` shows the extra observability and artifact reuse enabled by non-text state references.
+- `structured_memory` measures cross-task reuse from persistent shared memory.
+- `structured_memory_graph` adds dynamic keywords and links, following agentic-memory ideas such as Zettelkasten-style organization.
+
+Formal submission should rerun this report with `ABLATION_ROUNDS=10`, real embedding, and the target openEuler 24.03-LTS-SP3 environment.

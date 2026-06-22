@@ -8,6 +8,20 @@ from typing import Any
 
 
 PROTOCOL_VERSION = "agent-msg/v1"
+MESSAGE_TYPES = {
+    "handshake": "agent capability announcement",
+    "protocol_map": "field mapping and schema negotiation",
+    "request": "agent-to-agent action request",
+    "response": "agent-to-agent action response",
+    "event": "runtime or metric event",
+    "error": "recoverable protocol or execution failure",
+}
+ERROR_CODES = {
+    "BAD_PAYLOAD": "payload does not match the negotiated schema",
+    "UNSUPPORTED_ACTION": "receiver cannot perform the requested action",
+    "STATE_NOT_FOUND": "state reference is absent or expired",
+    "TOOL_FAILED": "tool execution failed",
+}
 STRUCTURED_PAYLOAD_SCHEMA = {
     "required": {
         "a": "short action name",
@@ -21,6 +35,9 @@ STRUCTURED_PAYLOAD_SCHEMA = {
         "cap": "agent capability list for handshake messages",
         "accept": "accepted communication modes for handshake messages",
         "fields": "protocol field mapping for negotiation messages",
+        "mt": "message type: request, response, event, handshake, protocol_map, error",
+        "state": "non-text state reference metadata, not the raw state payload",
+        "err": "structured error information with code and message",
     },
 }
 
@@ -103,15 +120,25 @@ def make_text_message(
 
 
 def make_handshake(task_id: str, agent_name: str, capabilities: list[str]) -> Message:
+    agent_card = {
+        "name": agent_name,
+        "protocol": PROTOCOL_VERSION,
+        "capabilities": capabilities,
+        "modes": ["text", "structured"],
+        "state_refs": True,
+        "artifacts": ["message", "memory_ref", "state_ref"],
+    }
     return Message.structured(
         sender=agent_name,
         receiver="runtime",
         task_id=task_id,
         payload={
+            "mt": "handshake",
             "a": "handshake",
             "version": PROTOCOL_VERSION,
             "cap": capabilities,
             "accept": ["text", "structured"],
+            "agent_card": agent_card,
             "out": f"{agent_name} ready",
             "refs": [],
         },
@@ -124,16 +151,21 @@ def make_protocol_mapping(task_id: str) -> Message:
         receiver="all",
         task_id=task_id,
         payload={
+            "mt": "protocol_map",
             "a": "protocol_map",
             "version": PROTOCOL_VERSION,
             "fields": {
+                "mt": "message type",
                 "a": "action",
                 "in": "compact inputs",
                 "out": "compact output",
                 "refs": "memory or state references",
                 "state": "non-text state metadata",
+                "err": "error code and message",
             },
             "schema": STRUCTURED_PAYLOAD_SCHEMA,
+            "message_types": MESSAGE_TYPES,
+            "error_codes": ERROR_CODES,
             "out": "protocol mapping negotiated",
             "refs": [],
         },
@@ -152,6 +184,8 @@ def validate_structured_payload(payload: dict[str, Any]) -> None:
         raise ValueError("Structured payload field 'refs' must be a list")
     if "state" in payload and not isinstance(payload["state"], dict):
         raise ValueError("Structured payload field 'state' must be a dict when present")
+    if "mt" in payload and payload["mt"] not in MESSAGE_TYPES:
+        raise ValueError(f"Structured payload field 'mt' must be one of: {', '.join(MESSAGE_TYPES)}")
     if "cap" in payload and not isinstance(payload["cap"], list):
         raise ValueError("Structured payload field 'cap' must be a list when present")
     if "accept" in payload and not isinstance(payload["accept"], list):

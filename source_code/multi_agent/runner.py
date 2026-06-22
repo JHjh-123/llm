@@ -13,12 +13,14 @@ from multi_agent.memory import SharedMemory
 from multi_agent.metrics import MetricsCollector
 from multi_agent.orchestrator import AgentBundle, build_orchestrator
 from multi_agent.protocol import make_handshake, make_protocol_mapping
+from multi_agent.state_exchange import StateStore
 
 
 class ExperimentRunner:
     def __init__(self) -> None:
         llm = build_llm_from_env()
         self.memory = SharedMemory(reset=_env_bool("MEMORY_RESET", default=False))
+        self.state_store = StateStore(reset=_env_bool("STATE_RESET", default=_env_bool("MEMORY_RESET", default=False)))
         self.planner = PlannerAgent("planner", llm)
         self.researcher = ResearchAgent("researcher", llm)
         self.executor = ExecutorAgent("executor", llm)
@@ -35,7 +37,16 @@ class ExperimentRunner:
         metrics = MetricsCollector(mode=mode, task=task)
         metrics.set_orchestrator(self.orchestrator.name)
         task_id = f"task_{uuid.uuid4().hex[:12]}"
-        ctx = AgentContext(mode=mode, task_id=task_id, memory=self.memory, metrics=metrics)
+        ctx = AgentContext(
+            mode=mode,
+            task_id=task_id,
+            memory=self.memory,
+            state_store=self.state_store,
+            metrics=metrics,
+            enable_memory_search=_env_bool("FEATURE_MEMORY_SEARCH", default=True),
+            enable_memory_write=_env_bool("FEATURE_MEMORY_WRITE", default=True),
+            enable_state_exchange=_env_bool("FEATURE_STATE_EXCHANGE", default=True),
+        )
 
         protocol_messages = []
         if mode == "structured":
@@ -51,6 +62,7 @@ class ExperimentRunner:
             "final": summary.content,
             "metrics": metrics.finish(),
             "protocol": [message.to_wire() for message in protocol_messages],
+            "states": [state.state_id for state in self.state_store.list_for_task(task_id)],
         }
 
     def run_ab(self, tasks: list[str], rounds: int = 10) -> dict[str, Any]:
@@ -66,6 +78,7 @@ class ExperimentRunner:
             "summary": _summarize(runs),
             "runs": runs,
             "memory": self.memory.to_dict(),
+            "states": self.state_store.to_dict(),
             "environment": collect_environment(),
         }
 

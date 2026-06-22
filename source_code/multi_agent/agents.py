@@ -7,6 +7,7 @@ from multi_agent.llm_client import LLMClient
 from multi_agent.memory import SharedMemory
 from multi_agent.metrics import MetricsCollector
 from multi_agent.protocol import Message, make_text_message
+from multi_agent.state_exchange import StateStore
 from multi_agent.tools import CodeActExecutor, ToolRegistry, build_codeact_for_task
 
 
@@ -15,7 +16,11 @@ class AgentContext:
     mode: str
     task_id: str
     memory: SharedMemory
+    state_store: StateStore
     metrics: MetricsCollector
+    enable_memory_search: bool = True
+    enable_memory_write: bool = True
+    enable_state_exchange: bool = True
 
 
 class BaseAgent:
@@ -41,6 +46,7 @@ class PlannerAgent(BaseAgent):
         prompt = f"Break this task into a concise research/execution plan:\n{task}"
         content = self._ask("You are a planning agent.", prompt)
         payload: dict[str, Any] = {
+            "mt": "request",
             "a": "plan",
             "in": {"task": _short(task)},
             "out": _short(content),
@@ -55,7 +61,7 @@ class PlannerAgent(BaseAgent):
 
 class ResearchAgent(BaseAgent):
     def research(self, task: str, plan: Message, ctx: AgentContext) -> Message:
-        hits = ctx.memory.search(task, limit=3)
+        hits = ctx.memory.search(task, limit=3) if ctx.enable_memory_search else []
         for hit in hits:
             ctx.metrics.record_memory_hit(hit.memory_id)
 
@@ -68,6 +74,7 @@ class ResearchAgent(BaseAgent):
         content = self._ask("You are a research agent.", prompt)
         memory_refs = [hit.memory_id for hit in hits]
         payload = {
+            "mt": "request",
             "a": "research",
             "in": {"task": _short(task), "plan": _short(plan.content)},
             "out": _short(content),
@@ -96,30 +103,69 @@ class ExecutorAgent(BaseAgent):
         )
         content = self._ask("You are an execution agent.", prompt)
         code = build_codeact_for_task(task, findings.content)
-        tool_registry = ToolRegistry(memory=ctx.memory)
+        tool_registry = ToolRegistry(memory=ctx.memory if ctx.enable_memory_search else None)
         tool_result = self.codeact.run(code, context=tool_registry.as_context())
         embedding = ctx.memory.embed(content)
-        memory = ctx.memory.add(
-            source_agent=self.name,
-            task_topic=task,
-            summary=content,
-            tags=_tags_for_task(task),
-            embedding=embedding,
-        )
-        ctx.metrics.record_non_text_transfer("embedding", len(embedding))
-        ctx.metrics.record_non_text_transfer("codeact_result", len(str(tool_result.to_dict())))
+        memory = None
+        refs: list[str] = []
+        state_payload: dict[str, Any] = {"embedding_dim": len(embedding), "tool_ok": tool_result.ok}
+
+        if ctx.enable_memory_write:
+            memory = ctx.memory.add(
+                source_agent=self.name,
+                task_topic=task,
+                summary=content,
+                tags=_tags_for_task(task),
+                embedding=embedding,
+            )
+            refs.append(memory.memory_id)
+
+        if ctx.enable_state_exchange:
+            embedding_state = ctx.state_store.put(
+                producer_agent=self.name,
+                task_id=ctx.task_id,
+                state_type="embedding",
+                payload=embedding,
+                metadata={
+                    "memory_id": memory.memory_id if memory else None,
+                    "dim": len(embedding),
+                    "usage": "semantic_retrieval",
+                },
+            )
+            tool_state = ctx.state_store.put(
+                producer_agent=self.name,
+                task_id=ctx.task_id,
+                state_type="codeact_result",
+                payload=tool_result.to_dict(),
+                metadata={
+                    "tool": "codeact/python",
+                    "ok": tool_result.ok,
+                    "usage": "execution_evidence",
+                },
+            )
+            ctx.metrics.record_non_text_transfer("embedding", embedding_state.size_bytes, embedding_state.state_id)
+            ctx.metrics.record_non_text_transfer("codeact_result", tool_state.size_bytes, tool_state.state_id)
+            refs.extend([embedding_state.state_id, tool_state.state_id])
+            state_payload.update(
+                {
+                    "embedding_ref": embedding_state.state_id,
+                    "tool_result_ref": tool_state.state_id,
+                    "sizes": {
+                        "embedding_bytes": embedding_state.size_bytes,
+                        "tool_result_bytes": tool_state.size_bytes,
+                    },
+                }
+            )
+        else:
+            state_payload["state_exchange"] = "disabled"
 
         payload = {
+            "mt": "response",
             "a": "execute",
             "in": {"task": _short(task), "findings": _short(findings.content)},
             "out": _short(content),
-            "refs": [memory.memory_id],
-            "state": {
-                "emb_dim": len(embedding),
-                "tool": "codeact/python",
-                "tool_ok": tool_result.ok,
-                "tool_result": tool_result.variables.get("result", {}),
-            },
+            "refs": refs,
+            "state": state_payload,
         }
         return _message(ctx, self.name, "summarizer", content, payload, parent_id=findings.message_id)
 
@@ -148,6 +194,7 @@ class SummarizerAgent(BaseAgent):
         )
         content = self._ask("You are a summarization agent.", prompt)
         payload = {
+            "mt": "response",
             "a": "summarize",
             "in": {"task": _short(task), "execution": _short(execution.content)},
             "out": _short(content),
@@ -179,7 +226,7 @@ def _message(
     return make_text_message(
         sender=sender,
         receiver=receiver,
-        content=content,
+        content=_text_handoff(sender, receiver, content, payload),
         task_id=ctx.task_id,
         parent_id=parent_id,
     )
@@ -197,3 +244,24 @@ def _tags_for_task(task: str) -> list[str]:
 def _short(text: str, limit: int = 120) -> str:
     compact = " ".join(text.split())
     return compact if len(compact) <= limit else f"{compact[: limit - 3]}..."
+
+
+def _text_handoff(sender: str, receiver: str, content: str, payload: dict[str, Any]) -> str:
+    """Natural-language handoff used as the baseline text collaboration mode."""
+
+    lines = [
+        f"{sender} is handing off work to {receiver}.",
+        f"The action being performed is {payload.get('a', 'unknown')}.",
+    ]
+    if payload.get("in"):
+        lines.append(f"The relevant input context is: {payload['in']}.")
+    lines.append(f"The result is: {content}")
+    if payload.get("refs"):
+        lines.append(
+            "The following memory or state references may be useful, but they are described here in text form: "
+            f"{payload['refs']}."
+        )
+    if payload.get("state"):
+        lines.append(f"The intermediate state summary is: {payload['state']}.")
+    lines.append("Please read the full handoff text above before continuing the multi-agent task.")
+    return "\n".join(lines)

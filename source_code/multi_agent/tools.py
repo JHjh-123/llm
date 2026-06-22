@@ -184,6 +184,9 @@ class ToolRegistry:
                 "task_topic": record.task_topic,
                 "summary": record.summary[:240],
                 "tags": record.tags,
+                "keywords": record.keywords[:8],
+                "links": record.links[:5],
+                "access_count": record.access_count,
             }
             for record in records
         ]

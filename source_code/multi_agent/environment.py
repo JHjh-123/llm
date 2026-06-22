@@ -17,6 +17,9 @@ def collect_environment() -> dict[str, str]:
         "embedding_backend": os.getenv("EMBEDDING_BACKEND", "hash"),
         "embedding_model": os.getenv("OLLAMA_EMBED_MODEL", os.getenv("EMBEDDING_MODEL", "hash")),
         "orchestrator": os.getenv("ORCHESTRATOR", "sequential"),
+        "token_count_method": os.getenv("TOKEN_COUNT_METHOD", "unicode_heuristic"),
+        "memory_path": os.getenv("MEMORY_PATH", "data/memory.sqlite"),
+        "state_path": os.getenv("STATE_PATH", "data/state.sqlite"),
     }
 
 

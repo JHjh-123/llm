@@ -19,7 +19,7 @@ def main() -> None:
     results = runner.run_ab(tasks=DEFAULT_TASKS, rounds=rounds)
 
     results_path = output_dir / "demo_results.json"
-    report_path = output_dir / "demo_report.md"
+    report_path = output_dir / "demo_report.txt"
     results_path.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
     report_path.write_text(_render_report(results, rounds), encoding="utf-8")
 
@@ -33,6 +33,7 @@ def _render_report(results: dict[str, Any], rounds: int) -> str:
     text = summary["text"]
     structured = summary["structured"]
     environment = results.get("environment", {})
+    memory_stats = _memory_stats(results.get("memory", []))
     delta = summary.get("structured_token_delta_pct", 0)
     advantage = "有优势" if delta < 0 else "暂未体现 token 优势"
 
@@ -49,6 +50,8 @@ def _render_report(results: dict[str, Any], rounds: int) -> str:
         f"- Embedding model: {environment.get('embedding_model', 'hash')}",
         f"- Orchestrator: {environment.get('orchestrator', 'sequential')}",
         f"- Token count method: {text.get('token_count_method', 'char_approx_4')}",
+        f"- Memory path: {environment.get('memory_path', 'data/memory.sqlite')}",
+        f"- State path: {environment.get('state_path', 'data/state.sqlite')}",
         "",
         "## Demo Goal",
         "",
@@ -60,13 +63,13 @@ def _render_report(results: dict[str, Any], rounds: int) -> str:
         "| --- | --- | --- |",
         "| 3+ Agent collaboration | Done | Planner, Researcher, Executor, Summarizer |",
         "| Text vs structured A/B | Done | Same tasks run in both modes |",
-        "| Formal protocol | Done | message_id, task_id, parent_id, handshake, capability discovery |",
+        "| Formal protocol | Done | message_id, task_id, parent_id, message type, handshake, capability discovery, error code table |",
         "| LangGraph orchestration | Done when ORCHESTRATOR=langgraph | Metrics record orchestrator name |",
         "| Shared memory | Done | SQLite memory store |",
         "| Real embedding | Done when EMBEDDING_BACKEND=ollama | bge-m3 returns 1024-d vectors |",
-        "| Non-text state transfer | Done | embedding/state refs/tool result counted |",
+        "| Non-text state transfer | Done | StateStore saves embedding/tool result and protocol carries state refs |",
         "| CodeAct tools | Done | restricted Python tool execution |",
-        "| Reproducible metrics | Prototype done | JSON and Markdown reports generated |",
+        "| Reproducible metrics | Done | JSON and Markdown reports generated with environment metadata |",
         "",
         "## A/B Summary",
         "",
@@ -93,7 +96,10 @@ def _render_report(results: dict[str, Any], rounds: int) -> str:
         f"- Structured application-message token delta: **{delta}%**",
         f"- Current conclusion: **{advantage}**",
         "- Protocol negotiation overhead is reported separately from application messages.",
-        "- Token counts use a transparent character-based approximation unless a real tokenizer is added.",
+        "- Token counts use the configured method shown above; set TOKEN_COUNT_METHOD=tiktoken when tiktoken is installed.",
+        f"- State records persisted: **{len(results.get('states', []))}**",
+        f"- Shared memories persisted: **{len(results.get('memory', []))}**",
+        f"- Avg memory links: **{memory_stats['avg_links']}**, total access count: **{memory_stats['total_access_count']}**",
         "",
         "## Agent Trace Example",
         "",
@@ -102,17 +108,17 @@ def _render_report(results: dict[str, Any], rounds: int) -> str:
     example = _first_structured_run(results)
     if example:
         lines.extend(_render_trace(example))
+        lines.extend(_render_state_refs(example, results))
 
     lines.extend(
         [
             "",
-            "## Remaining Work For Final Submission",
+            "## Final Submission Checklist",
             "",
-            "- Run this report with the deployed real LLM and embedding services on the target machine.",
-            "- Replace approximate token counting with a tokenizer that matches the selected model.",
-            "- Strengthen sandboxing if CodeAct runs untrusted code.",
-            "- Implement true KV-cache or hidden-state reuse if the deployed model server exposes those states.",
-            "- Record the exact target OS version; this run records it from /etc/os-release.",
+            "- Run at least 10 rounds on openEuler 24.03-LTS-SP3 and keep the generated JSON/Markdown artifacts.",
+            "- Use EMBEDDING_BACKEND=ollama and EMBEDDING_TIMEOUT=60 or higher for the formal embedding experiment.",
+            "- Use TOKEN_COUNT_METHOD=tiktoken if the selected model tokenizer is available; otherwise report character and heuristic token counts together.",
+            "- Include docs/system_design.md, docs/deployment.md, docs/experiment_report.md, reports/demo_report.md, and the demo video.",
         ]
     )
     return "\n".join(lines) + "\n"
@@ -146,6 +152,43 @@ def _render_trace(run: dict[str, Any]) -> list[str]:
             )
         )
     return lines
+
+
+def _render_state_refs(run: dict[str, Any], results: dict[str, Any]) -> list[str]:
+    states_by_id = {state.get("state_id"): state for state in results.get("states", [])}
+    rows = []
+    for state_id in run.get("states", []):
+        state = states_by_id.get(state_id)
+        if state:
+            rows.append(state)
+    if not rows:
+        return []
+    lines = [
+        "",
+        "## Non-Text State Exchange Example",
+        "",
+        "| State ID | Type | Producer | Size Bytes | Metadata |",
+        "| --- | --- | --- | ---: | --- |",
+    ]
+    for row in rows:
+        lines.append(
+            "| {state_id} | {state_type} | {producer} | {size} | {metadata} |".format(
+                state_id=row.get("state_id"),
+                state_type=row.get("state_type"),
+                producer=row.get("producer_agent"),
+                size=row.get("size_bytes"),
+                metadata=json.dumps(row.get("metadata", {}), ensure_ascii=False),
+            )
+        )
+    return lines
+
+
+def _memory_stats(memories: list[dict[str, Any]]) -> dict[str, Any]:
+    if not memories:
+        return {"avg_links": 0.0, "total_access_count": 0}
+    avg_links = sum(len(memory.get("links", [])) for memory in memories) / len(memories)
+    total_access = sum(int(memory.get("access_count", 0) or 0) for memory in memories)
+    return {"avg_links": round(avg_links, 3), "total_access_count": total_access}
 
 
 if __name__ == "__main__":

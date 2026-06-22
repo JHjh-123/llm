@@ -1,4 +1,7 @@
 # 核心系统只依赖 Python 标准库。
 # 安装本文件会额外启用可选的 LangGraph 编排能力：
 #   ORCHESTRATOR=langgraph python3 -m experiments.run_ab
+# 可选真实 tokenizer：
+#   python3 -m pip install tiktoken
+#   TOKEN_COUNT_METHOD=tiktoken python3 -m experiments.demo
 langgraph>=0.2
