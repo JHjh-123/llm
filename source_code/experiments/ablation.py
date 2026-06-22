@@ -225,6 +225,8 @@ def _render_report(results: dict[str, Any]) -> str:
         f"- LLM model: {environment.get('llm_model', 'required')}",
         f"- Embedding backend: {environment.get('embedding_backend', 'hash')}",
         f"- Token count method: {TOKEN_COUNT_METHOD}",
+        f"- State backend: {environment.get('state_backend', 'shared_memory')}",
+        f"- CodeAct sandbox: {environment.get('codeact_sandbox', 'subprocess')}",
         "",
         "## Variant Definitions",
         "",

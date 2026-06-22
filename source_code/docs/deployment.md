@@ -48,6 +48,12 @@ export OLLAMA_NUM_PREDICT=192
 export EMBEDDING_BACKEND=ollama
 export OLLAMA_EMBED_MODEL=bge-m3
 export EMBEDDING_TIMEOUT=60
+
+export STATE_BACKEND=shared_memory
+export CODEACT_SANDBOX=subprocess
+export CODEACT_CPU_SECONDS=2
+export CODEACT_MEMORY_MB=512
+export CODEACT_TIMEOUT_SECONDS=5
 ```
 
 如果只做流程验证，可以使用 hash embedding：
@@ -85,6 +91,8 @@ protocol smoke test passed
 ```bash
 export MEMORY_RESET=1
 export STATE_RESET=1
+export STATE_BACKEND=shared_memory
+export CODEACT_SANDBOX=subprocess
 export EXPERIMENT_ROUNDS=10
 export TOKEN_COUNT_METHOD=unicode_heuristic
 python3 -m experiments.run_ab
@@ -133,6 +141,8 @@ curl --noproxy '*' http://127.0.0.1:8765/api/config
 ```bash
 export ABLATION_ROUNDS=10
 export TOKEN_COUNT_METHOD=unicode_heuristic
+export STATE_BACKEND=shared_memory
+export CODEACT_SANDBOX=subprocess
 python3 -m experiments.ablation
 ```
 

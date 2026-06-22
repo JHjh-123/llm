@@ -52,6 +52,8 @@ def _render_report(results: dict[str, Any], rounds: int) -> str:
         f"- Token count method: {text.get('token_count_method', 'char_approx_4')}",
         f"- Memory path: {environment.get('memory_path', 'data/memory.sqlite')}",
         f"- State path: {environment.get('state_path', 'data/state.sqlite')}",
+        f"- State backend: {environment.get('state_backend', 'shared_memory')}",
+        f"- CodeAct sandbox: {environment.get('codeact_sandbox', 'subprocess')}",
         "",
         "## Demo Goal",
         "",

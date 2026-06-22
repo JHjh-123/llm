@@ -1,6 +1,6 @@
 # Multi-Agent Communication Demo Report
 
-- Generated at: 2026-06-18T11:41:50
+- Generated at: 2026-06-22T14:09:36
 - Rounds: 1
 - OS: openEuler 24.03 (LTS-SP1)
 - Python: 3.13.13
@@ -12,6 +12,8 @@
 - Token count method: unicode_heuristic
 - Memory path: data/memory.sqlite
 - State path: data/state.sqlite
+- State backend: shared_memory
+- CodeAct sandbox: subprocess
 
 ## Demo Goal
 
@@ -37,29 +39,29 @@
 | --- | ---: | ---: |
 | Runs | 6 | 6 |
 | Avg messages | 4.0 | 4.0 |
-| Avg chars | 4228.833 | 2439.333 |
-| Std chars | 121.586 | 28.709 |
-| Avg approx tokens | 1270.667 | 1012.333 |
-| Std approx tokens | 34.316 | 23.935 |
-| Min approx tokens | 1236.0 | 983.0 |
-| Max approx tokens | 1333.0 | 1052.0 |
-| Avg elapsed ms | 6178.048 | 5853.3 |
-| Std elapsed ms | 107.96 | 307.689 |
+| Avg chars | 3695.5 | 2439.833 |
+| Std chars | 108.983 | 28.169 |
+| Avg approx tokens | 1107.833 | 1004.667 |
+| Std approx tokens | 31.767 | 16.152 |
+| Min approx tokens | 1067.0 | 989.0 |
+| Max approx tokens | 1156.0 | 1037.0 |
+| Avg elapsed ms | 5095.15 | 3938.18 |
+| Std elapsed ms | 2289.067 | 91.483 |
 | Avg memory hits | 2.333 | 2.667 |
 | Avg non-text transfers | 2.833 | 3.0 |
-| Avg non-text transfer size | 3833.333 | 2987.333 |
+| Avg non-text transfer size | 3945.167 | 3291.333 |
 | Avg protocol events | 0.0 | 5.0 |
-| Avg protocol approx tokens | 0.0 | 1832.833 |
+| Avg protocol approx tokens | 0.0 | 1833.0 |
 
 ## Main Finding
 
-- Structured application-message token delta: **-20.33%**
+- Structured application-message token delta: **-9.31%**
 - Current conclusion: **有优势**
 - Protocol negotiation overhead is reported separately from application messages.
 - Token counts use the configured method shown above; set TOKEN_COUNT_METHOD=tiktoken when tiktoken is installed.
 - State records persisted: **24**
 - Shared memories persisted: **12**
-- Avg memory links: **3.75**, total access count: **51**
+- Avg memory links: **3.75**, total access count: **30**
 
 ## Agent Trace Example
 
@@ -68,16 +70,16 @@
 | From | To | Action | Refs | State Keys | Approx Tokens |
 | --- | --- | --- | ---: | --- | ---: |
 | planner | researcher | plan | 0 |  | 178 |
-| researcher | executor | research | 1 |  | 235 |
-| executor | summarizer | execute | 3 | embedding_ref, embedding_dim, tool_result_ref, tool_ok, sizes | 336 |
-| summarizer | user | summarize | 3 |  | 255 |
+| researcher | executor | research | 1 |  | 236 |
+| executor | summarizer | execute | 3 | embedding_dim, tool_ok, embedding_ref, tool_result_ref, sizes | 336 |
+| summarizer | user | summarize | 3 |  | 254 |
 
 ## Non-Text State Exchange Example
 
 | State ID | Type | Producer | Size Bytes | Metadata |
 | --- | --- | --- | ---: | --- |
-| state_9ccf084645f0 | embedding | executor | 481 | {"dim": 64, "memory_id": "b2d546cfef71", "usage": "semantic_retrieval"} |
-| state_e0d758e3698c | codeact_result | executor | 1926 | {"ok": true, "tool": "codeact/python", "usage": "execution_evidence"} |
+| state_0fa47a44c125 | embedding | executor | 512 | {"consumer_hint": "numpy.ndarray(shape, dtype='float64', buffer=SharedMemory(name).buf)", "dim": 64, "dtype": "float64", "memory_id": "003cd507f9e5", "shape": [64], "shm_name": "psm_6c5b0501", "shm_size": 512, "storage_backend": "shared_memory", "usage": "semantic_retrieval", "zero_copy_receiver": true} |
+| state_1d4aedcaaf7b | codeact_result | executor | 2021 | {"ok": true, "storage_backend": "sqlite", "tool": "codeact/python", "usage": "execution_evidence"} |
 
 ## Final Submission Checklist
 

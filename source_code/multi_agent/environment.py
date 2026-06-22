@@ -20,6 +20,8 @@ def collect_environment() -> dict[str, str]:
         "token_count_method": os.getenv("TOKEN_COUNT_METHOD", "unicode_heuristic"),
         "memory_path": os.getenv("MEMORY_PATH", "data/memory.sqlite"),
         "state_path": os.getenv("STATE_PATH", "data/state.sqlite"),
+        "state_backend": os.getenv("STATE_BACKEND", "shared_memory"),
+        "codeact_sandbox": os.getenv("CODEACT_SANDBOX", "subprocess"),
     }
 
 

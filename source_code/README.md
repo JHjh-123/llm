@@ -7,10 +7,10 @@
 - 多 Agent 协作：`planner -> researcher -> executor -> summarizer`
 - 两种通信模式对比：纯文本通信 `text` 与结构化通信 `structured`
 - 共享记忆：SQLite 持久化，支持关键词、标签、embedding 混合检索和动态记忆链接
-- 状态交换：SQLite 持久化，Agent 间只传 embedding/tool result 的 `state_id`
+- 状态交换：embedding 默认写入 Python `multiprocessing.shared_memory`，SQLite 记录 `state_id` 和共享内存元数据
 - 指标采集：消息数、字符数、近似 token、耗时、记忆命中、非文本状态传递
 - 真实 LLM 后端：Ollama 或 OpenAI-compatible HTTP
-- CodeAct 工具执行：受限 Python 工具动作空间
+- CodeAct 工具执行：默认使用受限子进程沙箱，支持 CPU/内存/超时限制
 - 浏览器对比面板：直接查看 text 和 structured 的差距
 
 ## 交付文档
@@ -26,7 +26,7 @@ docs/technical_description.md
 - `README.md`：项目概览、能力列表、常用运行命令。
 - `docs/deployment.md`：环境配置、部署、测试和正式实验命令。
 - `docs/technical_description.md`：具体做了什么、每个模块的作用、赛题覆盖情况和剩余差距。
-
+FV
 ## 依赖安装
 
 建议在 `source_code` 目录下操作：
@@ -42,6 +42,21 @@ python3 -m pip install -r requirements.txt
 - `requirements.txt` 当前安装的是可选的 `langgraph`，用于启用 `ORCHESTRATOR=langgraph`。
 - 如果只使用默认 `sequential` 编排，不安装依赖也能运行核心系统。
 - 如果安装 `tiktoken`，可以设置 `TOKEN_COUNT_METHOD=tiktoken` 使用真实 tokenizer；否则默认使用 `unicode_heuristic`。
+
+## 关键运行开关
+
+```bash
+# 状态交换后端：shared_memory 或 sqlite
+export STATE_BACKEND=shared_memory
+
+# CodeAct 执行模式：subprocess 或 inprocess
+export CODEACT_SANDBOX=subprocess
+export CODEACT_CPU_SECONDS=2
+export CODEACT_MEMORY_MB=512
+export CODEACT_TIMEOUT_SECONDS=5
+```
+
+`STATE_BACKEND=shared_memory` 会把 embedding 向量放入物理共享内存段，协议消息只传 `state_id` 和 `shm_name/dtype/shape` 等元数据；`CODEACT_SANDBOX=subprocess` 会在独立 Python 进程中执行工具代码，并用 Linux resource limit 控制 CPU、内存和输出文件大小。
 
 ## 后端配置
 
@@ -97,6 +112,8 @@ export EMBEDDING_BACKEND=ollama
 export OLLAMA_EMBED_MODEL=bge-m3
 export MEMORY_RESET=1
 export STATE_RESET=1
+export STATE_BACKEND=shared_memory
+export CODEACT_SANDBOX=subprocess
 export EXPERIMENT_ROUNDS=10
 export TOKEN_COUNT_METHOD=unicode_heuristic
 python3 -m experiments.run_ab
@@ -278,7 +295,8 @@ reports/dashboard_last.json
 系统目前通过这些方式降低通信开销：
 
 - `structured` 模式用 `a/in/out/refs/state` 这类短字段组织消息。
-- `StateStore` 将 embedding 和 CodeAct 结果写入 `data/state.sqlite`，协议只传 `state_id`。
+- `StateStore` 将状态元数据写入 `data/state.sqlite`，embedding 向量可放入 shared memory，协议只传 `state_id`。
+- 当 `STATE_BACKEND=shared_memory` 时，embedding 使用物理共享内存传递，SQLite 只记录可复现实验元数据。
 - `SharedMemory` 为新记忆生成 keywords/links/access_count，形成可复用的动态记忆网络。
 - `refs` 只传记忆 ID 或状态引用，避免重复传完整上下文。
 - `state` 承载 embedding 维度、工具状态 ID、状态大小等元数据。
