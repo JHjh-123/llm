@@ -99,18 +99,21 @@ def build_llm_from_env() -> LLMClient:
     if not backend:
         raise ValueError("LLM_BACKEND is required. Supported values: ollama, openai_compatible")
     backend = backend.lower()
+    timeout = int(os.getenv("LLM_TIMEOUT", "600"))
     if backend == "ollama":
         return OllamaClient(
             base_url=os.getenv("OLLAMA_BASE_URL", os.getenv("LLM_BASE_URL", "http://127.0.0.1:11434")),
             model=os.getenv("LLM_MODEL", "qwen3:8b"),
             think=_env_bool("OLLAMA_THINK", default=False),
             num_predict=int(os.getenv("OLLAMA_NUM_PREDICT", "256")),
+            timeout=timeout,
         )
     if backend == "openai_compatible":
         return OpenAICompatibleClient(
             base_url=os.environ["LLM_BASE_URL"],
             model=os.environ["LLM_MODEL"],
             api_key=os.getenv("LLM_API_KEY", "dummy"),
+            timeout=timeout,
         )
     raise ValueError(f"Unsupported LLM_BACKEND: {backend}. Supported values: ollama, openai_compatible")
 

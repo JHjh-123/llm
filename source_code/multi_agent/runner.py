@@ -5,7 +5,7 @@ import uuid
 from statistics import mean, pstdev
 from typing import Any
 
-from multi_agent.agents import AgentContext, ExecutorAgent, PlannerAgent, ResearchAgent, SummarizerAgent
+from multi_agent.agents import AgentContext, ExecutorAgent, PlannerAgent, ResearchAgent, SummarizerAgent, VerifierAgent, RouterAgent, SecurityReviewerAgent, DebuggerAgent, MemoryArchivistAgent
 from multi_agent.environment import collect_environment
 from multi_agent.llm_client import build_llm_from_env
 from multi_agent.metrics import TOKEN_COUNT_METHOD
@@ -25,13 +25,24 @@ class ExperimentRunner:
         self.researcher = ResearchAgent("researcher", llm)
         self.executor = ExecutorAgent("executor", llm)
         self.summarizer = SummarizerAgent("summarizer", llm)
+        self.verifier = VerifierAgent("verifier", llm)
+        self.router = RouterAgent("router", llm)
+        self.security_reviewer = SecurityReviewerAgent("security_reviewer", llm)
+        self.debugger = DebuggerAgent("debugger", llm)
+        self.archivist = MemoryArchivistAgent("archivist", llm)
         self.agents: AgentBundle = {
             "planner": self.planner,
             "researcher": self.researcher,
             "executor": self.executor,
             "summarizer": self.summarizer,
+            "verifier": self.verifier,
+            "router": self.router,
+            "security_reviewer": self.security_reviewer,
+            "debugger": self.debugger,
+            "archivist": self.archivist,
         }
         self.orchestrator = build_orchestrator(os.getenv("ORCHESTRATOR", "sequential").lower(), self.agents)
+        self._protocol_negotiated = False
 
     def run_task(self, task: str, mode: str) -> dict[str, Any]:
         metrics = MetricsCollector(mode=mode, task=task)
@@ -46,15 +57,24 @@ class ExperimentRunner:
             enable_memory_search=_env_bool("FEATURE_MEMORY_SEARCH", default=True),
             enable_memory_write=_env_bool("FEATURE_MEMORY_WRITE", default=True),
             enable_state_exchange=_env_bool("FEATURE_STATE_EXCHANGE", default=True),
+            security_reviewer=self.security_reviewer,
+            debugger=self.debugger,
         )
 
         protocol_messages = []
-        if mode == "structured":
+        if mode == "structured" and self._should_negotiate_protocol():
             protocol_messages = self._negotiate_protocol(task_id)
             for message in protocol_messages:
                 metrics.record_protocol_event(message)
+            self._protocol_negotiated = True
 
         summary = self.orchestrator.run(task, ctx, metrics)
+        if ctx.enable_memory_write:
+            try:
+                archive_msg = self.archivist.archive(ctx)
+                metrics.record_message(archive_msg)
+            except Exception:
+                pass
         return {
             "task": task,
             "task_id": task_id,
@@ -90,6 +110,11 @@ class ExperimentRunner:
             messages.append(make_handshake(task_id, agent.name, agent.capabilities))
         return messages
 
+    def _should_negotiate_protocol(self) -> bool:
+        if not _env_bool("PROTOCOL_SESSION_CACHE", default=True):
+            return True
+        return not self._protocol_negotiated
+
 
 def _summarize(runs: list[dict[str, Any]]) -> dict[str, Any]:
     by_mode: dict[str, list[dict[str, Any]]] = {"text": [], "structured": []}
@@ -115,12 +140,16 @@ def _summarize(runs: list[dict[str, Any]]) -> dict[str, Any]:
             "max_elapsed_ms": _max(metrics, "elapsed_ms"),
             "avg_memory_hits": _avg(metrics, "memory_hit_count"),
             "std_memory_hits": _std(metrics, "memory_hit_count"),
+            "avg_memory_graph_hits": _avg(metrics, "memory_graph_hit_count"),
+            "std_memory_graph_hits": _std(metrics, "memory_graph_hit_count"),
             "avg_non_text_transfers": _avg(metrics, "non_text_transfer_count"),
             "std_non_text_transfers": _std(metrics, "non_text_transfer_count"),
             "avg_non_text_transfer_size": _avg(metrics, "non_text_transfer_size"),
             "avg_protocol_events": _avg(metrics, "protocol_event_count"),
             "avg_protocol_chars": _avg(metrics, "protocol_char_count"),
             "avg_protocol_approx_tokens": _avg(metrics, "protocol_approx_token_count"),
+            "avg_dynamic_codeact": _avg(metrics, "dynamic_codeact_count"),
+            "avg_fallback_codeact": _avg(metrics, "fallback_codeact_count"),
         }
 
     text_tokens = summary["text"]["avg_approx_tokens"]
@@ -151,3 +180,4 @@ def _env_bool(name: str, default: bool) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
+

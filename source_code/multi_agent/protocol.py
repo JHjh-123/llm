@@ -120,14 +120,6 @@ def make_text_message(
 
 
 def make_handshake(task_id: str, agent_name: str, capabilities: list[str]) -> Message:
-    agent_card = {
-        "name": agent_name,
-        "protocol": PROTOCOL_VERSION,
-        "capabilities": capabilities,
-        "modes": ["text", "structured"],
-        "state_refs": True,
-        "artifacts": ["message", "memory_ref", "state_ref"],
-    }
     return Message.structured(
         sender=agent_name,
         receiver="runtime",
@@ -136,9 +128,9 @@ def make_handshake(task_id: str, agent_name: str, capabilities: list[str]) -> Me
             "mt": "handshake",
             "a": "handshake",
             "version": PROTOCOL_VERSION,
-            "cap": capabilities,
-            "accept": ["text", "structured"],
-            "agent_card": agent_card,
+            "cap": [_cap_code(capability) for capability in capabilities],
+            "accept": ["t", "s"],
+            "card": {"n": agent_name, "p": PROTOCOL_VERSION, "art": ["msg", "mem", "state"]},
             "out": f"{agent_name} ready",
             "refs": [],
         },
@@ -154,18 +146,10 @@ def make_protocol_mapping(task_id: str) -> Message:
             "mt": "protocol_map",
             "a": "protocol_map",
             "version": PROTOCOL_VERSION,
-            "fields": {
-                "mt": "message type",
-                "a": "action",
-                "in": "compact inputs",
-                "out": "compact output",
-                "refs": "memory or state references",
-                "state": "non-text state metadata",
-                "err": "error code and message",
-            },
-            "schema": STRUCTURED_PAYLOAD_SCHEMA,
-            "message_types": MESSAGE_TYPES,
-            "error_codes": ERROR_CODES,
+            "fields": ["mt", "a", "in", "out", "refs", "state", "err"],
+            "required": list(STRUCTURED_PAYLOAD_SCHEMA["required"]),
+            "message_types": list(MESSAGE_TYPES),
+            "error_codes": list(ERROR_CODES),
             "out": "protocol mapping negotiated",
             "refs": [],
         },
@@ -194,3 +178,17 @@ def validate_structured_payload(payload: dict[str, Any]) -> None:
 
 def _new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
+
+
+def _cap_code(capability: str) -> str:
+    aliases = {
+        "task_decomposition": "task_dec",
+        "memory_search": "mem_search",
+        "codeact_python": "codeact",
+        "make_markdown_table": "md_table",
+        "compute_numeric_metrics": "num_metrics",
+        "memory_write": "mem_write",
+        "embedding_state": "emb_state",
+        "summarization": "summary",
+    }
+    return aliases.get(capability, capability)

@@ -161,9 +161,12 @@ def _summarize(runs: list[dict[str, Any]], memory: list[dict[str, Any]], states:
         "std_chars": _std(metrics, "char_count"),
         "avg_approx_tokens": _avg(metrics, "approx_token_count"),
         "std_approx_tokens": _std(metrics, "approx_token_count"),
+        "avg_total_approx_tokens": _avg(metrics, "approx_token_count")
+        + _avg(metrics, "protocol_approx_token_count"),
         "avg_elapsed_ms": _avg(metrics, "elapsed_ms"),
         "std_elapsed_ms": _std(metrics, "elapsed_ms"),
         "avg_memory_hits": _avg(metrics, "memory_hit_count"),
+        "avg_memory_graph_hits": _avg(metrics, "memory_graph_hit_count"),
         "avg_non_text_transfers": _avg(metrics, "non_text_transfer_count"),
         "avg_non_text_transfer_size": _avg(metrics, "non_text_transfer_size"),
         "avg_protocol_events": _avg(metrics, "protocol_event_count"),
@@ -172,6 +175,8 @@ def _summarize(runs: list[dict[str, Any]], memory: list[dict[str, Any]], states:
         "state_records": len(states),
         "avg_memory_links": _avg_memory_links(memory),
         "memory_access_count": sum(int(item.get("access_count", 0) or 0) for item in memory),
+        "avg_dynamic_codeact": _avg(metrics, "dynamic_codeact_count"),
+        "avg_fallback_codeact": _avg(metrics, "fallback_codeact_count"),
     }
 
 
@@ -182,9 +187,15 @@ def _compare_variants(variants: list[dict[str, Any]]) -> dict[str, Any]:
     for name, summary in by_name.items():
         comparison[name] = {
             "token_delta_vs_text_pct": _pct_delta(summary["avg_approx_tokens"], baseline["avg_approx_tokens"]),
+            "total_token_delta_vs_text_pct": _pct_delta(
+                summary["avg_total_approx_tokens"], baseline["avg_total_approx_tokens"]
+            ),
             "char_delta_vs_text_pct": _pct_delta(summary["avg_chars"], baseline["avg_chars"]),
             "elapsed_delta_vs_text_pct": _pct_delta(summary["avg_elapsed_ms"], baseline["avg_elapsed_ms"]),
             "memory_hit_delta_vs_text": round(summary["avg_memory_hits"] - baseline["avg_memory_hits"], 3),
+            "memory_graph_hit_delta_vs_text": round(
+                summary["avg_memory_graph_hits"] - baseline["avg_memory_graph_hits"], 3
+            ),
             "state_transfer_delta_vs_text": round(
                 summary["avg_non_text_transfers"] - baseline["avg_non_text_transfers"], 3
             ),
@@ -202,6 +213,9 @@ def _compare_variants(variants: list[dict[str, Any]]) -> dict[str, Any]:
             "elapsed_delta_pct": _pct_delta(current_summary["avg_elapsed_ms"], previous_summary["avg_elapsed_ms"]),
             "memory_hit_delta": round(
                 current_summary["avg_memory_hits"] - previous_summary["avg_memory_hits"], 3
+            ),
+            "memory_graph_hit_delta": round(
+                current_summary["avg_memory_graph_hits"] - previous_summary["avg_memory_graph_hits"], 3
             ),
             "state_records_delta": current_summary["state_records"] - previous_summary["state_records"],
             "memory_links_delta": round(
@@ -242,8 +256,8 @@ def _render_report(results: dict[str, Any]) -> str:
             "",
             "## Summary",
             "",
-            "| Variant | Avg Tokens | Token Delta | Avg Chars | Char Delta | Avg Elapsed ms | Memory Hits | State Transfers | Memory Records | State Records | Avg Links |",
-            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+            "| Variant | Avg Tokens | Token Delta | Avg Chars | Char Delta | Avg Elapsed ms | Memory Hits | Graph Hits | State Transfers | Memory Records | State Records | Avg Links | Dynamic CodeAct | Fallback CodeAct |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
         ]
     )
     comparison = results["comparison"]["vs_text"]
@@ -252,7 +266,7 @@ def _render_report(results: dict[str, Any]) -> str:
         token_delta = comparison[variant["name"]]["token_delta_vs_text_pct"]
         char_delta = comparison[variant["name"]]["char_delta_vs_text_pct"]
         lines.append(
-            "| {name} | {tokens} | {token_delta} | {chars} | {char_delta} | {elapsed} | {hits} | {transfers} | {memories} | {states} | {links} |".format(
+            "| {name} | {tokens} | {token_delta} | {chars} | {char_delta} | {elapsed} | {hits} | {graph_hits} | {transfers} | {memories} | {states} | {links} | {dynamic} | {fallback} |".format(
                 name=variant["name"],
                 tokens=summary["avg_approx_tokens"],
                 token_delta=_fmt_pct(token_delta),
@@ -260,10 +274,37 @@ def _render_report(results: dict[str, Any]) -> str:
                 char_delta=_fmt_pct(char_delta),
                 elapsed=summary["avg_elapsed_ms"],
                 hits=summary["avg_memory_hits"],
+                graph_hits=summary["avg_memory_graph_hits"],
                 transfers=summary["avg_non_text_transfers"],
                 memories=summary["memory_records"],
                 states=summary["state_records"],
                 links=summary["avg_memory_links"],
+                dynamic=summary["avg_dynamic_codeact"],
+                fallback=summary["avg_fallback_codeact"],
+            )
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Total Token View",
+            "",
+            "Application tokens exclude protocol negotiation. Total tokens add application and protocol negotiation tokens.",
+            "",
+            "| Variant | App Tokens | Protocol Tokens | Total Tokens | Total Delta vs Text |",
+            "| --- | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for variant in results["variants"]:
+        summary = variant["summary"]
+        total_delta = comparison[variant["name"]]["total_token_delta_vs_text_pct"]
+        lines.append(
+            "| {name} | {app} | {protocol} | {total} | {delta} |".format(
+                name=variant["name"],
+                app=summary["avg_approx_tokens"],
+                protocol=summary["avg_protocol_approx_tokens"],
+                total=summary["avg_total_approx_tokens"],
+                delta=_fmt_pct(total_delta),
             )
         )
 
@@ -272,17 +313,18 @@ def _render_report(results: dict[str, Any]) -> str:
             "",
             "## Marginal Contribution",
             "",
-            "| Step | Token Delta | Elapsed Delta | Memory Hit Delta | State Record Delta | Memory Link Delta |",
-            "| --- | ---: | ---: | ---: | ---: | ---: |",
+            "| Step | Token Delta | Elapsed Delta | Memory Hit Delta | Graph Hit Delta | State Record Delta | Memory Link Delta |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
         ]
     )
     for step, values in results["comparison"]["marginal"].items():
         lines.append(
-            "| {step} | {token} | {elapsed} | {hits} | {states} | {links} |".format(
+            "| {step} | {token} | {elapsed} | {hits} | {graph_hits} | {states} | {links} |".format(
                 step=step,
                 token=_fmt_pct(values["token_delta_pct"]),
                 elapsed=_fmt_pct(values["elapsed_delta_pct"]),
                 hits=values["memory_hit_delta"],
+                graph_hits=values["memory_graph_hit_delta"],
                 states=values["state_records_delta"],
                 links=values["memory_links_delta"],
             )

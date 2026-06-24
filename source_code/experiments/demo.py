@@ -92,6 +92,8 @@ def _render_report(results: dict[str, Any], rounds: int) -> str:
         f"| Avg non-text transfer size | {text['avg_non_text_transfer_size']} | {structured['avg_non_text_transfer_size']} |",
         f"| Avg protocol events | {text['avg_protocol_events']} | {structured['avg_protocol_events']} |",
         f"| Avg protocol approx tokens | {text['avg_protocol_approx_tokens']} | {structured['avg_protocol_approx_tokens']} |",
+        f"| Avg dynamic CodeAct | {text.get('avg_dynamic_codeact', 0.0)} | {structured.get('avg_dynamic_codeact', 0.0)} |",
+        f"| Avg fallback CodeAct | {text.get('avg_fallback_codeact', 0.0)} | {structured.get('avg_fallback_codeact', 0.0)} |",
         "",
         "## Main Finding",
         "",

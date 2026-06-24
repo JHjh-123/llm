@@ -70,7 +70,7 @@ def build_embedding_provider_from_env() -> EmbeddingProvider:
         return OllamaEmbeddingProvider(
             base_url=os.getenv("OLLAMA_BASE_URL", os.getenv("LLM_BASE_URL", "http://127.0.0.1:11434")),
             model=os.getenv("OLLAMA_EMBED_MODEL", os.getenv("EMBEDDING_MODEL", "nomic-embed-text")),
-            timeout=int(os.getenv("EMBEDDING_TIMEOUT", "10")),
+            timeout=int(os.getenv("EMBEDDING_TIMEOUT", "120")),
         )
     raise ValueError(f"Unsupported EMBEDDING_BACKEND: {backend}")
 

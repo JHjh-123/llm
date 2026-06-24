@@ -21,6 +21,8 @@ class MetricsSnapshot:
     non_text_transfer_size: int = 0
     memory_hit_count: int = 0
     memory_hit_ids: list[str] = field(default_factory=list)
+    memory_graph_hit_count: int = 0
+    memory_graph_hit_ids: list[str] = field(default_factory=list)
     protocol_event_count: int = 0
     protocol_char_count: int = 0
     protocol_approx_token_count: int = 0
@@ -30,6 +32,8 @@ class MetricsSnapshot:
     state_ref_ids: list[str] = field(default_factory=list)
     orchestrator: str = "sequential"
     elapsed_ms: float = 0.0
+    dynamic_codeact_count: int = 0
+    fallback_codeact_count: int = 0
 
 
 class MetricsCollector:
@@ -71,6 +75,16 @@ class MetricsCollector:
         self.snapshot.memory_hit_count += 1
         self.snapshot.memory_hit_ids.append(memory_id)
 
+    def record_memory_graph_hit(self, memory_id: str) -> None:
+        self.snapshot.memory_graph_hit_count += 1
+        self.snapshot.memory_graph_hit_ids.append(memory_id)
+
+    def record_dynamic_codeact(self) -> None:
+        self.snapshot.dynamic_codeact_count += 1
+
+    def record_fallback_codeact(self) -> None:
+        self.snapshot.fallback_codeact_count += 1
+
     def record_protocol_event(self, message: Message) -> None:
         wire = message.to_wire()
         self.snapshot.protocol_event_count += 1
@@ -91,10 +105,10 @@ def _count_tokens(text: str) -> int:
         return max(1, len(text) // 4)
     if method == "whitespace":
         return max(1, len(text.split()))
-    if method == "tiktoken":
-        counted = _try_tiktoken(text)
-        if counted is not None:
-            return counted
+    
+    counted = _try_tiktoken(text)
+    if counted is not None:
+        return counted
     return _unicode_heuristic(text)
 
 

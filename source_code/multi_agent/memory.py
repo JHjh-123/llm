@@ -11,6 +11,11 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from multi_agent.embedding import EmbeddingProvider, build_embedding_provider_from_env
+try:
+    import numpy as np
+    HAS_NUMPY = True
+except ImportError:
+    HAS_NUMPY = False
 
 
 @dataclass
@@ -94,18 +99,41 @@ class SharedMemory:
         self._conn.commit()
         return record
 
-    def search(self, query: str, limit: int = 3) -> list[MemoryRecord]:
-        query_embedding = self.embed(query)
-        query_terms = _terms(query)
-        scored: list[tuple[float, MemoryRecord]] = []
+    def search(self, query: str | list[float], limit: int = 3) -> list[MemoryRecord]:
+        if isinstance(query, (list, tuple)):
+            query_embedding = list(query)
+            query_terms = set()
+        elif isinstance(query, str):
+            query_embedding = self.embed(query)
+            query_terms = _terms(query)
+        else:
+            query_embedding = list(query)
+            query_terms = set()
 
-        for record in self._all_records():
+        scored: list[tuple[float, MemoryRecord]] = []
+        all_records = self._all_records()
+        if not all_records:
+            return []
+
+        if HAS_NUMPY:
+            embeddings = np.array([r.embedding for r in all_records], dtype=np.float64)
+            q_emb = np.array(query_embedding, dtype=np.float64)
+            norms = np.linalg.norm(embeddings, axis=1)
+            q_norm = np.linalg.norm(q_emb)
+            norms[norms == 0.0] = 1.0
+            if q_norm == 0.0:
+                q_norm = 1.0
+            vector_scores = (np.dot(embeddings, q_emb) / (norms * q_norm)).tolist()
+        else:
+            vector_scores = [_cosine(query_embedding, record.embedding) for record in all_records]
+
+        for idx, record in enumerate(all_records):
             tag_score = len(query_terms.intersection(record.tags)) * 0.2
             graph_enabled = _env_bool("MEMORY_GRAPH_ENABLED", default=True)
             keyword_score = len(query_terms.intersection(record.keywords)) * 0.1 if graph_enabled else 0.0
             text_terms = _terms(f"{record.task_topic} {record.summary}")
             text_score = len(query_terms.intersection(text_terms)) * 0.05
-            vector_score = _cosine(query_embedding, record.embedding)
+            vector_score = vector_scores[idx]
             link_score = len(record.links) * 0.01 if graph_enabled else 0.0
             score = vector_score + tag_score + keyword_score + text_score + link_score
             if score > 0.15:
@@ -174,10 +202,25 @@ class SharedMemory:
     def _related_memory_ids(self, embedding: list[float], keywords: list[str], exclude_id: str) -> list[str]:
         scored = []
         keyword_set = set(keywords)
-        for record in self._all_records():
-            if record.memory_id == exclude_id:
-                continue
-            vector_score = _cosine(embedding, record.embedding)
+        all_records = self._all_records()
+        records_to_score = [r for r in all_records if r.memory_id != exclude_id]
+        if not records_to_score:
+            return []
+
+        if HAS_NUMPY:
+            embeddings = np.array([r.embedding for r in records_to_score], dtype=np.float64)
+            q_emb = np.array(embedding, dtype=np.float64)
+            norms = np.linalg.norm(embeddings, axis=1)
+            q_norm = np.linalg.norm(q_emb)
+            norms[norms == 0.0] = 1.0
+            if q_norm == 0.0:
+                q_norm = 1.0
+            vector_scores = (np.dot(embeddings, q_emb) / (norms * q_norm)).tolist()
+        else:
+            vector_scores = [_cosine(embedding, record.embedding) for record in records_to_score]
+
+        for idx, record in enumerate(records_to_score):
+            vector_score = vector_scores[idx]
             keyword_score = len(keyword_set.intersection(record.keywords)) * 0.1
             tag_score = len(keyword_set.intersection(record.tags)) * 0.05
             score = vector_score + keyword_score + tag_score

@@ -1,13 +1,13 @@
 # Multi-Agent Mechanism Ablation Report
 
-- Generated at: 2026-06-22T14:12:41
-- Run ID: 3b4542213f
+- Generated at: 2026-06-23T21:00:13
+- Run ID: ad5078bb95
 - Rounds: 1
-- Tasks per round: 6
+- Tasks per round: 2
 - OS: openEuler 24.03 (LTS-SP1)
 - LLM backend: ollama
 - LLM model: qwen3:8b
-- Embedding backend: hash
+- Embedding backend: ollama
 - Token count method: unicode_heuristic
 - State backend: shared_memory
 - CodeAct sandbox: subprocess
@@ -24,22 +24,34 @@
 
 ## Summary
 
-| Variant | Avg Tokens | Token Delta | Avg Chars | Char Delta | Avg Elapsed ms | Memory Hits | State Transfers | Memory Records | State Records | Avg Links |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| text_baseline | 885.333 | 0.0% | 3045.333 | 0.0% | 3887.573 | 0.0 | 0.0 | 0 | 0 | 0.0 |
-| structured_protocol | 904.0 | 2.11% | 2183.5 | -28.3% | 3456.121 | 0.0 | 0.0 | 0 | 0 | 0.0 |
-| structured_state | 979.167 | 10.6% | 2370.667 | -22.15% | 3389.912 | 0.0 | 2.0 | 0 | 12 | 0.0 |
-| structured_memory | 1002.833 | 13.27% | 2429.667 | -20.22% | 3436.398 | 2.0 | 2.833 | 6 | 12 | 0.0 |
-| structured_memory_graph | 1003.667 | 13.37% | 2430.0 | -20.21% | 3468.233 | 2.0 | 2.833 | 6 | 12 | 2.333 |
+| Variant | Avg Tokens | Token Delta | Avg Chars | Char Delta | Avg Elapsed ms | Memory Hits | Graph Hits | State Transfers | Memory Records | State Records | Avg Links | Dynamic CodeAct | Fallback CodeAct |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| text_baseline | 3914.0 | 0.0% | 12717.5 | 0.0% | 27035.485 | 0.0 | 0.0 | 0.0 | 0 | 0 | 0.0 | 0.0 | 1.0 |
+| structured_protocol | 3415.5 | -12.74% | 8216.5 | -35.39% | 30695.555 | 0.0 | 0.0 | 0.0 | 0 | 0 | 0.0 | 1.0 | 1.0 |
+| structured_state | 6823.5 | 74.34% | 15683.0 | 23.32% | 55295.618 | 0.0 | 0.0 | 8.5 | 0 | 12 | 0.0 | 1.0 | 2.0 |
+| structured_memory | 7821.0 | 99.82% | 18280.5 | 43.74% | 64378.857 | 6.0 | 0.0 | 11.0 | 6 | 12 | 0.0 | 1.0 | 2.0 |
+| structured_memory_graph | 7363.0 | 88.12% | 17098.0 | 34.44% | 104959.329 | 6.0 | 6.0 | 11.0 | 6 | 12 | 2.5 | 1.0 | 2.0 |
+
+## Total Token View
+
+Application tokens exclude protocol negotiation. Total tokens add application and protocol negotiation tokens.
+
+| Variant | App Tokens | Protocol Tokens | Total Tokens | Total Delta vs Text |
+| --- | ---: | ---: | ---: | ---: |
+| text_baseline | 3914.0 | 0.0 | 3914.0 | 0.0% |
+| structured_protocol | 3415.5 | 1073.0 | 4488.5 | 14.68% |
+| structured_state | 6823.5 | 1073.0 | 7896.5 | 101.75% |
+| structured_memory | 7821.0 | 1073.0 | 8894.0 | 127.24% |
+| structured_memory_graph | 7363.0 | 1073.0 | 8436.0 | 115.53% |
 
 ## Marginal Contribution
 
-| Step | Token Delta | Elapsed Delta | Memory Hit Delta | State Record Delta | Memory Link Delta |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| text_baseline_to_structured_protocol | 2.11% | -11.1% | 0.0 | 0 | 0.0 |
-| structured_protocol_to_structured_state | 8.31% | -1.92% | 0.0 | 12 | 0.0 |
-| structured_state_to_structured_memory | 2.42% | 1.37% | 2.0 | 0 | 0.0 |
-| structured_memory_to_structured_memory_graph | 0.08% | 0.93% | 0.0 | 0 | 2.333 |
+| Step | Token Delta | Elapsed Delta | Memory Hit Delta | Graph Hit Delta | State Record Delta | Memory Link Delta |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| text_baseline_to_structured_protocol | -12.74% | 13.54% | 0.0 | 0.0 | 0 | 0.0 |
+| structured_protocol_to_structured_state | 99.78% | 80.14% | 0.0 | 0.0 | 12 | 0.0 |
+| structured_state_to_structured_memory | 14.62% | 16.43% | 6.0 | 0.0 | 0 | 0.0 |
+| structured_memory_to_structured_memory_graph | -5.86% | 63.03% | 0.0 | 6.0 | 0 | 2.5 |
 
 ## Interpretation
 
