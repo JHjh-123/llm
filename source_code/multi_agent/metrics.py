@@ -6,6 +6,7 @@ import time
 from dataclasses import asdict, dataclass, field
 
 from multi_agent.protocol import Message
+from multi_agent.message_bus import MessageBus
 
 TOKEN_COUNT_METHOD = os.getenv("TOKEN_COUNT_METHOD", "unicode_heuristic")
 
@@ -40,6 +41,7 @@ class MetricsCollector:
     def __init__(self, mode: str, task: str) -> None:
         self.snapshot = MetricsSnapshot(mode=mode, task=task)
         self._started_at = time.perf_counter()
+        self.message_bus = MessageBus()
 
     def record_message(self, message: Message) -> None:
         wire = message.to_wire()
@@ -61,6 +63,11 @@ class MetricsCollector:
                 "approx_tokens": approx_tokens,
             }
         )
+        # Publish recorded agent message to the message bus channel
+        try:
+            self.message_bus.publish("multi_agent_events", asdict(message))
+        except Exception as e:
+            print(f"Error publishing recorded message: {e}")
 
     def record_non_text_transfer(self, transfer_type: str, size: int, state_id: str | None = None) -> None:
         self.snapshot.non_text_transfer_count += 1
@@ -70,6 +77,17 @@ class MetricsCollector:
             event["state_id"] = state_id
             self.snapshot.state_ref_ids.append(state_id)
         self.snapshot.non_text_transfer_trace.append(event)
+        
+        # Publish event to the message bus as well
+        try:
+            self.message_bus.publish("multi_agent_events", {
+                "event_type": "non_text_transfer",
+                "transfer_type": transfer_type,
+                "size": size,
+                "state_id": state_id
+            })
+        except Exception as e:
+            pass
 
     def record_memory_hit(self, memory_id: str) -> None:
         self.snapshot.memory_hit_count += 1
@@ -90,6 +108,11 @@ class MetricsCollector:
         self.snapshot.protocol_event_count += 1
         self.snapshot.protocol_char_count += len(wire)
         self.snapshot.protocol_approx_token_count += _count_tokens(wire)
+        
+        try:
+            self.message_bus.publish("multi_agent_events", asdict(message))
+        except Exception as e:
+            pass
 
     def set_orchestrator(self, name: str) -> None:
         self.snapshot.orchestrator = name

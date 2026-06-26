@@ -10,6 +10,7 @@ from multi_agent.protocol import Message, make_text_message
 from multi_agent.state_exchange import StateStore
 from multi_agent.tools import CodeActExecutor, ToolRegistry, build_codeact_for_task
 import re
+import json
 
 def _extract_code(text: str) -> str | None:
     # Match code blocks of the form ```python ... ```

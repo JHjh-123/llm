@@ -12,6 +12,13 @@ from multiprocessing import shared_memory
 from pathlib import Path
 from typing import Any
 
+try:
+    import psycopg2
+    import psycopg2.extras
+    HAS_PSYCOPG2 = True
+except ImportError:
+    HAS_PSYCOPG2 = False
+
 
 @dataclass
 class StateRecord:
@@ -33,15 +40,42 @@ class StateStore:
     """
 
     def __init__(self, db_path: str | Path | None = None, reset: bool = False) -> None:
-        self.db_path = Path(db_path or os.getenv("STATE_PATH", "data/state.sqlite"))
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        if reset and self.db_path.exists():
-            self.db_path.unlink()
+        self.db_type = os.getenv("DATABASE_TYPE", "sqlite").lower()
+        self.postgres_url = os.getenv("DATABASE_URL", "postgresql://postgres:123456@localhost:5432/multi_agent")
+        
         self.backend = os.getenv("STATE_BACKEND", "shared_memory").lower()
         self._shared_segments: list[shared_memory.SharedMemory] = []
         self._closed = False
-        self._conn = sqlite3.connect(self.db_path)
-        self._conn.row_factory = sqlite3.Row
+        
+        connected = False
+        if self.db_type == "postgres":
+            if HAS_PSYCOPG2:
+                try:
+                    self._conn = psycopg2.connect(self.postgres_url)
+                    self._conn.autocommit = True
+                    connected = True
+                    if reset:
+                        try:
+                            with self._conn.cursor() as cur:
+                                cur.execute("DROP TABLE IF EXISTS states CASCADE")
+                        except Exception:
+                            pass
+                except Exception as e:
+                    print(f"Warning: Failed to connect to PostgreSQL in StateStore: {e}. Falling back to SQLite.")
+                    self.db_type = "sqlite"
+            else:
+                print("Warning: psycopg2-binary package not found. Falling back to SQLite.")
+                self.db_type = "sqlite"
+
+        if not connected:
+            self.db_type = "sqlite"
+            self.db_path = Path(db_path or os.getenv("STATE_PATH", "data/state.sqlite"))
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            if reset and self.db_path.exists():
+                self.db_path.unlink()
+            self._conn = sqlite3.connect(self.db_path)
+            self._conn.row_factory = sqlite3.Row
+
         self._init_schema()
         atexit.register(self.close)
 
@@ -78,35 +112,70 @@ class StateStore:
             metadata=record_metadata,
             payload=stored_payload,
         )
-        self._conn.execute(
-            """
-            INSERT OR REPLACE INTO states
-            (state_id, producer_agent, task_id, state_type, created_at, size_bytes, metadata, payload)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                record.state_id,
-                record.producer_agent,
-                record.task_id,
-                record.state_type,
-                record.created_at,
-                record.size_bytes,
-                json.dumps(record.metadata, ensure_ascii=False, sort_keys=True),
-                json.dumps(record.payload, ensure_ascii=False, sort_keys=True, default=str),
-            ),
-        )
-        self._conn.commit()
+
+        if self.db_type == "postgres":
+            with self._conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO states
+                    (state_id, producer_agent, task_id, state_type, created_at, size_bytes, metadata, payload)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (state_id) DO UPDATE SET
+                        producer_agent = EXCLUDED.producer_agent,
+                        task_id = EXCLUDED.task_id,
+                        state_type = EXCLUDED.state_type,
+                        created_at = EXCLUDED.created_at,
+                        size_bytes = EXCLUDED.size_bytes,
+                        metadata = EXCLUDED.metadata,
+                        payload = EXCLUDED.payload
+                    """,
+                    (
+                        record.state_id,
+                        record.producer_agent,
+                        record.task_id,
+                        record.state_type,
+                        record.created_at,
+                        record.size_bytes,
+                        json.dumps(record.metadata, ensure_ascii=False, sort_keys=True),
+                        json.dumps(record.payload, ensure_ascii=False, sort_keys=True, default=str),
+                    ),
+                )
+        else:
+            self._conn.execute(
+                """
+                INSERT OR REPLACE INTO states
+                (state_id, producer_agent, task_id, state_type, created_at, size_bytes, metadata, payload)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record.state_id,
+                    record.producer_agent,
+                    record.task_id,
+                    record.state_type,
+                    record.created_at,
+                    record.size_bytes,
+                    json.dumps(record.metadata, ensure_ascii=False, sort_keys=True),
+                    json.dumps(record.payload, ensure_ascii=False, sort_keys=True, default=str),
+                ),
+            )
+            self._conn.commit()
+
         return record
 
     def get(self, state_id: str) -> StateRecord | None:
-        row = self._conn.execute(
-            """
+        query = """
             SELECT state_id, producer_agent, task_id, state_type, created_at, size_bytes, metadata, payload
             FROM states
             WHERE state_id = ?
-            """,
-            (state_id,),
-        ).fetchone()
+        """
+        row = None
+        if self.db_type == "postgres":
+            with self._conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute(query.replace("?", "%s"), (state_id,))
+                row = cur.fetchone()
+        else:
+            row = self._conn.execute(query, (state_id,)).fetchone()
+
         if not row:
             return None
         record = _row_to_record(row)
@@ -117,13 +186,6 @@ class StateStore:
         return record
 
     def read_shared_vector(self, record: StateRecord) -> list[float] | None:
-        """Read a shared-memory vector by reference.
-
-        The default reports keep only metadata. This method demonstrates the
-        receiver-side path: attach to the named segment and read float64 values
-        directly from the shared memory buffer.
-        """
-
         shm_name = record.metadata.get("shm_name")
         length = int(record.metadata.get("shape", [0])[0] or 0)
         if not shm_name or not length:
@@ -141,25 +203,33 @@ class StateStore:
                 shm.close()
 
     def list_for_task(self, task_id: str) -> list[StateRecord]:
-        rows = self._conn.execute(
-            """
+        query = """
             SELECT state_id, producer_agent, task_id, state_type, created_at, size_bytes, metadata, payload
             FROM states
             WHERE task_id = ?
             ORDER BY created_at ASC
-            """,
-            (task_id,),
-        ).fetchall()
+        """
+        if self.db_type == "postgres":
+            with self._conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute(query.replace("?", "%s"), (task_id,))
+                rows = cur.fetchall()
+        else:
+            rows = self._conn.execute(query, (task_id,)).fetchall()
         return [_row_to_record(row) for row in rows]
 
     def to_dict(self, include_payload: bool = False) -> list[dict[str, Any]]:
-        rows = self._conn.execute(
-            """
+        query = """
             SELECT state_id, producer_agent, task_id, state_type, created_at, size_bytes, metadata, payload
             FROM states
             ORDER BY created_at ASC
-            """
-        ).fetchall()
+        """
+        if self.db_type == "postgres":
+            with self._conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute(query)
+                rows = cur.fetchall()
+        else:
+            rows = self._conn.execute(query).fetchall()
+            
         records = []
         for row in rows:
             record = asdict(_row_to_record(row))
@@ -208,26 +278,45 @@ class StateStore:
             return None
 
     def _init_schema(self) -> None:
-        self._conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS states (
-                state_id TEXT PRIMARY KEY,
-                producer_agent TEXT NOT NULL,
-                task_id TEXT NOT NULL,
-                state_type TEXT NOT NULL,
-                created_at REAL NOT NULL,
-                size_bytes INTEGER NOT NULL,
-                metadata TEXT NOT NULL,
-                payload TEXT NOT NULL
+        if self.db_type == "postgres":
+            with self._conn.cursor() as cur:
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS states (
+                        state_id TEXT PRIMARY KEY,
+                        producer_agent TEXT NOT NULL,
+                        task_id TEXT NOT NULL,
+                        state_type TEXT NOT NULL,
+                        created_at DOUBLE PRECISION NOT NULL,
+                        size_bytes INTEGER NOT NULL,
+                        metadata TEXT NOT NULL,
+                        payload TEXT NOT NULL
+                    )
+                    """
+                )
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_states_task ON states(task_id)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_states_type ON states(state_type)")
+        else:
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS states (
+                    state_id TEXT PRIMARY KEY,
+                    producer_agent TEXT NOT NULL,
+                    task_id TEXT NOT NULL,
+                    state_type TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    size_bytes INTEGER NOT NULL,
+                    metadata TEXT NOT NULL,
+                    payload TEXT NOT NULL
+                )
+                """
             )
-            """
-        )
-        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_states_task ON states(task_id)")
-        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_states_type ON states(state_type)")
-        self._conn.commit()
+            self._conn.execute("CREATE INDEX IF NOT EXISTS idx_states_task ON states(task_id)")
+            self._conn.execute("CREATE INDEX IF NOT EXISTS idx_states_type ON states(state_type)")
+            self._conn.commit()
 
 
-def _row_to_record(row: sqlite3.Row) -> StateRecord:
+def _row_to_record(row: sqlite3.Row | dict) -> StateRecord:
     return StateRecord(
         state_id=str(row["state_id"]),
         producer_agent=str(row["producer_agent"]),

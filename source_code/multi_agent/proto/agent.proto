@@ -1,0 +1,94 @@
+syntax = "proto3";
+
+package agent;
+
+message Message {
+  string message_id = 1;
+  string task_id = 2;
+  string parent_id = 3;
+  string sender = 4;
+  string receiver = 5;
+  string mode = 6;
+  string content = 7;
+  string payload_json = 8;
+  double created_at = 9;
+  string error = 10;
+}
+
+message RouteRequest {
+  string task = 1;
+  string mode = 2;
+  string task_id = 3;
+}
+
+message PlanRequest {
+  string task = 1;
+  string mode = 2;
+  string task_id = 3;
+}
+
+message ResearchRequest {
+  string task = 1;
+  Message plan = 2;
+  string mode = 3;
+  string task_id = 4;
+}
+
+message ExecuteRequest {
+  string task = 1;
+  Message findings = 2;
+  string mode = 3;
+  string task_id = 4;
+}
+
+message SummarizeRequest {
+  string task = 1;
+  Message execution = 2;
+  string mode = 3;
+  string task_id = 4;
+}
+
+message VerifyRequest {
+  string task = 1;
+  Message plan = 2;
+  Message summary = 3;
+  string mode = 4;
+  string task_id = 5;
+}
+
+message MessagePayload {
+  // Empty message to represent dynamic payload dict if needed
+}
+
+message ReviewRequest {
+  string task = 1;
+  string code = 2;
+  string mode = 3;
+  string task_id = 4;
+}
+
+message DebugRequest {
+  string task = 1;
+  string code = 2;
+  string error = 3;
+  string stdout = 4;
+  string mode = 5;
+  string task_id = 6;
+}
+
+message ArchiveRequest {
+  string mode = 1;
+  string task_id = 2;
+}
+
+service AgentService {
+  rpc RouteTask(RouteRequest) returns (Message);
+  rpc PlanTask(PlanRequest) returns (Message);
+  rpc ResearchTask(ResearchRequest) returns (Message);
+  rpc ExecuteTask(ExecuteRequest) returns (Message);
+  rpc SummarizeTask(SummarizeRequest) returns (Message);
+  rpc VerifyTask(VerifyRequest) returns (Message);
+  rpc ReviewCode(ReviewRequest) returns (Message);
+  rpc DebugCode(DebugRequest) returns (Message);
+  rpc ArchiveMemory(ArchiveRequest) returns (Message);
+}

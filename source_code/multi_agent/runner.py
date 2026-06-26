@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import os
 import uuid
+import json
+from dataclasses import asdict
 from statistics import mean, pstdev
 from typing import Any
+
+import grpc
+from multi_agent.proto import agent_pb2, agent_pb2_grpc
 
 from multi_agent.agents import AgentContext, ExecutorAgent, PlannerAgent, ResearchAgent, SummarizerAgent, VerifierAgent, RouterAgent, SecurityReviewerAgent, DebuggerAgent, MemoryArchivistAgent
 from multi_agent.environment import collect_environment
@@ -12,8 +17,187 @@ from multi_agent.metrics import TOKEN_COUNT_METHOD
 from multi_agent.memory import SharedMemory
 from multi_agent.metrics import MetricsCollector
 from multi_agent.orchestrator import AgentBundle, build_orchestrator
-from multi_agent.protocol import make_handshake, make_protocol_mapping
+from multi_agent.protocol import make_handshake, make_protocol_mapping, Message
 from multi_agent.state_exchange import StateStore
+
+
+class RemoteAgentWrapper:
+    """gRPC Client wrapper that forwards agent requests to AgentService.
+
+    Matches the exact interface of the local agent objects.
+    """
+
+    def __init__(self, name: str, service_url: str) -> None:
+        self.name = name
+        # Clean service URL to remove protocol schemes
+        if service_url.startswith("http://"):
+            service_url = service_url[len("http://"):]
+        elif service_url.startswith("https://"):
+            service_url = service_url[len("https://"):]
+        self.service_url = service_url
+        self._channel = None
+        self._stub = None
+
+    def _get_stub(self):
+        if self._channel is None:
+            self._channel = grpc.insecure_channel(self.service_url)
+            self._stub = agent_pb2_grpc.AgentServiceStub(self._channel)
+        return self._stub
+
+    def route(self, task: str, ctx: AgentContext) -> Message:
+        stub = self._get_stub()
+        req = agent_pb2.RouteRequest(task=task, mode=ctx.mode, task_id=ctx.task_id)
+        try:
+            pb_msg = stub.RouteTask(req, timeout=600)
+            return self._protobuf_to_message(pb_msg)
+        except Exception as e:
+            raise RuntimeError(f"gRPC RouteTask failed: {e}") from e
+
+    def plan(self, task: str, ctx: AgentContext) -> Message:
+        stub = self._get_stub()
+        req = agent_pb2.PlanRequest(task=task, mode=ctx.mode, task_id=ctx.task_id)
+        try:
+            pb_msg = stub.PlanTask(req, timeout=600)
+            return self._protobuf_to_message(pb_msg)
+        except Exception as e:
+            raise RuntimeError(f"gRPC PlanTask failed: {e}") from e
+
+    def research(self, task: str, plan: Message, ctx: AgentContext) -> Message:
+        stub = self._get_stub()
+        req = agent_pb2.ResearchRequest(
+            task=task,
+            plan=self._message_to_protobuf(plan),
+            mode=ctx.mode,
+            task_id=ctx.task_id
+        )
+        try:
+            pb_msg = stub.ResearchTask(req, timeout=600)
+            return self._protobuf_to_message(pb_msg)
+        except Exception as e:
+            raise RuntimeError(f"gRPC ResearchTask failed: {e}") from e
+
+    def execute(self, task: str, findings: Message, ctx: AgentContext) -> Message:
+        stub = self._get_stub()
+        req = agent_pb2.ExecuteRequest(
+            task=task,
+            findings=self._message_to_protobuf(findings),
+            mode=ctx.mode,
+            task_id=ctx.task_id
+        )
+        try:
+            pb_msg = stub.ExecuteTask(req, timeout=600)
+            return self._protobuf_to_message(pb_msg)
+        except Exception as e:
+            raise RuntimeError(f"gRPC ExecuteTask failed: {e}") from e
+
+    def summarize(self, task: str, execution: Message, ctx: AgentContext) -> Message:
+        stub = self._get_stub()
+        req = agent_pb2.SummarizeRequest(
+            task=task,
+            execution=self._message_to_protobuf(execution),
+            mode=ctx.mode,
+            task_id=ctx.task_id
+        )
+        try:
+            pb_msg = stub.SummarizeTask(req, timeout=600)
+            return self._protobuf_to_message(pb_msg)
+        except Exception as e:
+            raise RuntimeError(f"gRPC SummarizeTask failed: {e}") from e
+
+    def verify(self, task: str, plan: Message, summary: Message, ctx: AgentContext) -> Message:
+        stub = self._get_stub()
+        req = agent_pb2.VerifyRequest(
+            task=task,
+            plan=self._message_to_protobuf(plan),
+            summary=self._message_to_protobuf(summary),
+            mode=ctx.mode,
+            task_id=ctx.task_id
+        )
+        try:
+            pb_msg = stub.VerifyTask(req, timeout=600)
+            return self._protobuf_to_message(pb_msg)
+        except Exception as e:
+            raise RuntimeError(f"gRPC VerifyTask failed: {e}") from e
+
+    def review(self, task: str, code: str, ctx: AgentContext) -> Message:
+        stub = self._get_stub()
+        req = agent_pb2.ReviewRequest(task=task, code=code, mode=ctx.mode, task_id=ctx.task_id)
+        try:
+            pb_msg = stub.ReviewCode(req, timeout=600)
+            return self._protobuf_to_message(pb_msg)
+        except Exception as e:
+            raise RuntimeError(f"gRPC ReviewCode failed: {e}") from e
+
+    def debug(self, task: str, code: str, error: str, stdout: str, ctx: AgentContext) -> Message:
+        stub = self._get_stub()
+        req = agent_pb2.DebugRequest(
+            task=task,
+            code=code,
+            error=error,
+            stdout=stdout,
+            mode=ctx.mode,
+            task_id=ctx.task_id
+        )
+        try:
+            pb_msg = stub.DebugCode(req, timeout=600)
+            return self._protobuf_to_message(pb_msg)
+        except Exception as e:
+            raise RuntimeError(f"gRPC DebugCode failed: {e}") from e
+
+    def archive(self, ctx: AgentContext) -> Message:
+        stub = self._get_stub()
+        req = agent_pb2.ArchiveRequest(mode=ctx.mode, task_id=ctx.task_id)
+        try:
+            pb_msg = stub.ArchiveMemory(req, timeout=600)
+            return self._protobuf_to_message(pb_msg)
+        except Exception as e:
+            raise RuntimeError(f"gRPC ArchiveMemory failed: {e}") from e
+
+    @property
+    def capabilities(self) -> list[str]:
+        return ["remote_execution"]
+
+    def _message_to_protobuf(self, msg: Message) -> agent_pb2.Message:
+        return agent_pb2.Message(
+            message_id=msg.message_id,
+            task_id=msg.task_id,
+            parent_id=msg.parent_id or "",
+            sender=msg.sender,
+            receiver=msg.receiver,
+            mode=msg.mode,
+            content=msg.content,
+            payload_json=json.dumps(msg.payload, ensure_ascii=False) if msg.payload else "{}",
+            created_at=msg.created_at,
+            error=json.dumps(msg.error, ensure_ascii=False) if msg.error else ""
+        )
+
+    def _protobuf_to_message(self, pb_msg: agent_pb2.Message) -> Message:
+        payload = {}
+        if pb_msg.payload_json:
+            try:
+                payload = json.loads(pb_msg.payload_json)
+            except Exception:
+                pass
+                
+        error = None
+        if pb_msg.error:
+            try:
+                error = json.loads(pb_msg.error)
+            except Exception:
+                error = {"message": pb_msg.error}
+                
+        return Message(
+            message_id=pb_msg.message_id,
+            task_id=pb_msg.task_id,
+            parent_id=pb_msg.parent_id if pb_msg.parent_id else None,
+            sender=pb_msg.sender,
+            receiver=pb_msg.receiver,
+            mode=pb_msg.mode,
+            content=pb_msg.content,
+            payload=payload,
+            created_at=pb_msg.created_at,
+            error=error
+        )
 
 
 class ExperimentRunner:
@@ -21,15 +205,33 @@ class ExperimentRunner:
         llm = build_llm_from_env()
         self.memory = SharedMemory(reset=_env_bool("MEMORY_RESET", default=False))
         self.state_store = StateStore(reset=_env_bool("STATE_RESET", default=_env_bool("MEMORY_RESET", default=False)))
-        self.planner = PlannerAgent("planner", llm)
-        self.researcher = ResearchAgent("researcher", llm)
-        self.executor = ExecutorAgent("executor", llm)
-        self.summarizer = SummarizerAgent("summarizer", llm)
-        self.verifier = VerifierAgent("verifier", llm)
-        self.router = RouterAgent("router", llm)
-        self.security_reviewer = SecurityReviewerAgent("security_reviewer", llm)
-        self.debugger = DebuggerAgent("debugger", llm)
-        self.archivist = MemoryArchivistAgent("archivist", llm)
+        
+        self.deployment = os.getenv("AGENT_DEPLOYMENT", "local").lower()
+        self.service_url = os.getenv("AGENT_SERVICE_URL", "localhost:50051")
+
+
+        if self.deployment == "microservice":
+            print(f"Initializing ExperimentRunner in distributed MICROSERVICE mode connecting to {self.service_url}")
+            self.planner = RemoteAgentWrapper("planner", self.service_url)
+            self.researcher = RemoteAgentWrapper("researcher", self.service_url)
+            self.executor = RemoteAgentWrapper("executor", self.service_url)
+            self.summarizer = RemoteAgentWrapper("summarizer", self.service_url)
+            self.verifier = RemoteAgentWrapper("verifier", self.service_url)
+            self.router = RemoteAgentWrapper("router", self.service_url)
+            self.security_reviewer = RemoteAgentWrapper("security_reviewer", self.service_url)
+            self.debugger = RemoteAgentWrapper("debugger", self.service_url)
+            self.archivist = RemoteAgentWrapper("archivist", self.service_url)
+        else:
+            self.planner = PlannerAgent("planner", llm)
+            self.researcher = ResearchAgent("researcher", llm)
+            self.executor = ExecutorAgent("executor", llm)
+            self.summarizer = SummarizerAgent("summarizer", llm)
+            self.verifier = VerifierAgent("verifier", llm)
+            self.router = RouterAgent("router", llm)
+            self.security_reviewer = SecurityReviewerAgent("security_reviewer", llm)
+            self.debugger = DebuggerAgent("debugger", llm)
+            self.archivist = MemoryArchivistAgent("archivist", llm)
+
         self.agents: AgentBundle = {
             "planner": self.planner,
             "researcher": self.researcher,
@@ -107,7 +309,9 @@ class ExperimentRunner:
             make_protocol_mapping(task_id),
         ]
         for agent in self.agents.values():
-            messages.append(make_handshake(task_id, agent.name, agent.capabilities))
+            # Get capabilities safely
+            caps = agent.capabilities if hasattr(agent, "capabilities") else ["remote_execution"]
+            messages.append(make_handshake(task_id, agent.name, caps))
         return messages
 
     def _should_negotiate_protocol(self) -> bool:
@@ -180,4 +384,3 @@ def _env_bool(name: str, default: bool) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
-
