@@ -258,7 +258,12 @@ class ExperimentRunner:
             metrics=metrics,
             enable_memory_search=_env_bool("FEATURE_MEMORY_SEARCH", default=True),
             enable_memory_write=_env_bool("FEATURE_MEMORY_WRITE", default=True),
-            enable_state_exchange=_env_bool("FEATURE_STATE_EXCHANGE", default=True),
+            enable_state_exchange=_mode_feature_enabled(
+                "FEATURE_STATE_EXCHANGE",
+                default=True,
+                mode=mode,
+                structured_only=True,
+            ),
             security_reviewer=self.security_reviewer,
             debugger=self.debugger,
         )
@@ -271,7 +276,7 @@ class ExperimentRunner:
             self._protocol_negotiated = True
 
         summary = self.orchestrator.run(task, ctx, metrics)
-        if ctx.enable_memory_write:
+        if ctx.enable_memory_write and _env_bool("MEMORY_ARCHIVIST_ENABLED", default=False):
             try:
                 archive_msg = self.archivist.archive(ctx)
                 metrics.record_message(archive_msg)
@@ -384,3 +389,10 @@ def _env_bool(name: str, default: bool) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _mode_feature_enabled(name: str, default: bool, mode: str, structured_only: bool = False) -> bool:
+    enabled = _env_bool(name, default=default)
+    if structured_only and mode != "structured":
+        return False
+    return enabled

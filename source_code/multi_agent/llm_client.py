@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from abc import ABC, abstractmethod
@@ -40,11 +41,18 @@ class OpenAICompatibleClient(LLMClient):
             },
         )
 
-        try:
-            with self.opener.open(request, timeout=self.timeout) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-        except urllib.error.URLError as exc:
-            raise RuntimeError(f"LLM request failed: {exc}") from exc
+        max_retries = 3
+        backoff = 1.0
+        for attempt in range(max_retries):
+            try:
+                with self.opener.open(request, timeout=self.timeout) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                break
+            except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
+                if attempt == max_retries - 1:
+                    raise RuntimeError(f"LLM request failed after {max_retries} attempts: {exc}") from exc
+                time.sleep(backoff)
+                backoff *= 2
 
         return payload["choices"][0]["message"]["content"]
 
@@ -85,11 +93,18 @@ class OllamaClient(LLMClient):
             headers={"Content-Type": "application/json"},
         )
 
-        try:
-            with self.opener.open(request, timeout=self.timeout) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-        except urllib.error.URLError as exc:
-            raise RuntimeError(f"Ollama request failed: {exc}") from exc
+        max_retries = 3
+        backoff = 1.0
+        for attempt in range(max_retries):
+            try:
+                with self.opener.open(request, timeout=self.timeout) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                break
+            except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
+                if attempt == max_retries - 1:
+                    raise RuntimeError(f"Ollama request failed after {max_retries} attempts: {exc}") from exc
+                time.sleep(backoff)
+                backoff *= 2
 
         return payload["message"]["content"]
 

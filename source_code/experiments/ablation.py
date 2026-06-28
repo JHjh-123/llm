@@ -153,7 +153,7 @@ def _run_variant(
 
 def _summarize(runs: list[dict[str, Any]], memory: list[dict[str, Any]], states: list[dict[str, Any]]) -> dict[str, Any]:
     metrics = [run["metrics"] for run in runs]
-    return {
+    summary = {
         "runs": len(runs),
         "token_count_method": TOKEN_COUNT_METHOD,
         "avg_messages": _avg(metrics, "message_count"),
@@ -178,6 +178,8 @@ def _summarize(runs: list[dict[str, Any]], memory: list[dict[str, Any]], states:
         "avg_dynamic_codeact": _avg(metrics, "dynamic_codeact_count"),
         "avg_fallback_codeact": _avg(metrics, "fallback_codeact_count"),
     }
+    summary.update(_reuse_efficiency(runs))
+    return summary
 
 
 def _compare_variants(variants: list[dict[str, Any]]) -> dict[str, Any]:
@@ -333,6 +335,33 @@ def _render_report(results: dict[str, Any]) -> str:
     lines.extend(
         [
             "",
+            "## Memory Reuse Efficiency",
+            "",
+            "This view compares warm or memory-hit runs inside each variant. It is the direct evidence for cross-task reuse, separate from the total cost of writing and indexing memory.",
+            "",
+            "| Variant | Hit Runs | No-Hit Runs | Avg Hit Elapsed ms | Avg No-Hit Elapsed ms | Hit Elapsed Delta | Round1 Elapsed ms | Later Elapsed ms | Later Delta |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for variant in results["variants"]:
+        summary = variant["summary"]
+        lines.append(
+            "| {name} | {hit_runs} | {no_hit_runs} | {hit_elapsed} | {no_hit_elapsed} | {hit_delta} | {round1} | {later} | {later_delta} |".format(
+                name=variant["name"],
+                hit_runs=summary["memory_hit_runs"],
+                no_hit_runs=summary["memory_no_hit_runs"],
+                hit_elapsed=summary["avg_elapsed_memory_hit"],
+                no_hit_elapsed=summary["avg_elapsed_memory_no_hit"],
+                hit_delta=_fmt_pct(summary["memory_hit_elapsed_delta_pct"]),
+                round1=summary["avg_elapsed_round1"],
+                later=summary["avg_elapsed_later_rounds"],
+                later_delta=_fmt_pct(summary["later_round_elapsed_delta_pct"]),
+            )
+        )
+
+    lines.extend(
+        [
+            "",
             "## Interpretation",
             "",
             "- `structured_protocol` isolates the benefit of compact protocol encoding.",
@@ -358,6 +387,37 @@ def _avg_memory_links(memory: list[dict[str, Any]]) -> float:
     if not memory:
         return 0.0
     return round(sum(len(item.get("links", [])) for item in memory) / len(memory), 3)
+
+
+def _reuse_efficiency(runs: list[dict[str, Any]]) -> dict[str, Any]:
+    hit_metrics = [run["metrics"] for run in runs if run["metrics"].get("memory_hit_count", 0) > 0]
+    no_hit_metrics = [run["metrics"] for run in runs if run["metrics"].get("memory_hit_count", 0) == 0]
+    round1_metrics = [run["metrics"] for run in runs if int(run.get("round", 1)) == 1]
+    later_metrics = [run["metrics"] for run in runs if int(run.get("round", 1)) > 1]
+
+    hit_elapsed = _avg(hit_metrics, "elapsed_ms")
+    no_hit_elapsed = _avg(no_hit_metrics, "elapsed_ms")
+    round1_elapsed = _avg(round1_metrics, "elapsed_ms")
+    later_elapsed = _avg(later_metrics, "elapsed_ms")
+    hit_tokens = _avg(hit_metrics, "approx_token_count")
+    no_hit_tokens = _avg(no_hit_metrics, "approx_token_count")
+    return {
+        "memory_hit_runs": len(hit_metrics),
+        "memory_no_hit_runs": len(no_hit_metrics),
+        "avg_elapsed_memory_hit": hit_elapsed,
+        "avg_elapsed_memory_no_hit": no_hit_elapsed,
+        "memory_hit_elapsed_delta_pct": _pct_delta(hit_elapsed, no_hit_elapsed)
+        if hit_metrics and no_hit_elapsed
+        else None,
+        "avg_tokens_memory_hit": hit_tokens,
+        "avg_tokens_memory_no_hit": no_hit_tokens,
+        "memory_hit_token_delta_pct": _pct_delta(hit_tokens, no_hit_tokens)
+        if hit_metrics and no_hit_tokens
+        else None,
+        "avg_elapsed_round1": round1_elapsed,
+        "avg_elapsed_later_rounds": later_elapsed,
+        "later_round_elapsed_delta_pct": _pct_delta(later_elapsed, round1_elapsed) if round1_elapsed else None,
+    }
 
 
 def _pct_delta(new: float, old: float) -> float | None:

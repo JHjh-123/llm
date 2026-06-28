@@ -135,7 +135,14 @@ class CodeActExecutor:
             )
             if completed.returncode != 0:
                 stderr = completed.stderr.decode("utf-8", errors="replace").strip()
-                return ToolResult(ok=False, stdout="", variables={}, error=f"Subprocess failed: {stderr}")
+                ret = completed.returncode
+                if ret < 0:
+                    sig = -ret
+                    sig_name = "SIGKILL (OOM or force-killed)" if sig == 9 else ("SIGXCPU (CPU limit exceeded)" if sig == 24 else f"Signal {sig}")
+                    error_msg = f"Subprocess terminated by system signal: {sig_name}"
+                else:
+                    error_msg = f"Subprocess failed with exit code {ret}: {stderr}"
+                return ToolResult(ok=False, stdout="", variables={}, error=error_msg)
             result = json.loads(completed.stdout.decode("utf-8"))
             return ToolResult(
                 ok=bool(result.get("ok")),
@@ -278,18 +285,46 @@ class ToolRegistry:
 
 
 def build_codeact_for_task(task: str, findings: str) -> str:
-    return "\n".join(
+    plan = {
+        "read_markdown_files": True,
+        "search_memory": True,
+        "compute_metrics": True,
+        "make_table": True,
+    }
+    return build_codeact_from_plan(task, findings, plan)
+
+
+def build_codeact_from_plan(task: str, findings: str, plan: dict[str, Any]) -> str:
+    read_markdown_files = bool(plan.get("read_markdown_files", True))
+    search_memory_enabled = bool(plan.get("search_memory", True))
+    compute_metrics_enabled = bool(plan.get("compute_metrics", True))
+    make_table_enabled = bool(plan.get("make_table", True))
+    lines = [
+        f"task = {task!r}",
+        f"findings = {findings!r}",
+        "files = []",
+        "memory_hits = []",
+        "metrics = {}",
+        "table = ''",
+    ]
+    if read_markdown_files:
+        lines.append("files = search_files('*.md', 5)")
+    if search_memory_enabled:
+        lines.append("memory_hits = search_memory(task, 2)")
+    if compute_metrics_enabled:
+        lines.append("metrics = compute_numeric_metrics([len(task), len(findings), len(memory_hits)])")
+    if make_table_enabled:
+        lines.extend(
+            [
+                "table = make_markdown_table([",
+                "    {'metric': 'task_chars', 'value': len(task)},",
+                "    {'metric': 'finding_chars', 'value': len(findings)},",
+                "    {'metric': 'memory_hits', 'value': len(memory_hits)},",
+                "])",
+            ]
+        )
+    lines.extend(
         [
-            f"task = {task!r}",
-            f"findings = {findings!r}",
-            "files = search_files('*.md', 5)",
-            "memory_hits = search_memory(task, 2)",
-            "metrics = compute_numeric_metrics([len(task), len(findings)])",
-            "table = make_markdown_table([",
-            "    {'metric': 'task_chars', 'value': len(task)},",
-            "    {'metric': 'finding_chars', 'value': len(findings)},",
-            "    {'metric': 'memory_hits', 'value': len(memory_hits)},",
-            "])",
             "result = {",
             "    'task_words': len(task.split()),",
             "    'finding_chars': len(findings),",
@@ -302,6 +337,7 @@ def build_codeact_for_task(task: str, findings: str) -> str:
             "print(result)",
         ]
     )
+    return "\n".join(lines)
 
 
 _SUBPROCESS_RUNTIME = textwrap.dedent(

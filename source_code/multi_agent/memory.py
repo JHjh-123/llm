@@ -50,6 +50,7 @@ class SharedMemory:
         self.db_type = os.getenv("DATABASE_TYPE", "sqlite").lower()
         self.postgres_url = os.getenv("DATABASE_URL", "postgresql://postgres:123456@localhost:5432/multi_agent")
         self.embedding_provider = embedding_provider or build_embedding_provider_from_env()
+        self._embedding_cache: dict[str, list[float]] = {}
         
         connected = False
         if self.db_type == "postgres":
@@ -78,7 +79,8 @@ class SharedMemory:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
             if reset and self.db_path.exists():
                 self.db_path.unlink()
-            self._conn = sqlite3.connect(self.db_path)
+            self._conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30.0)
+            self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.row_factory = sqlite3.Row
 
         self._init_schema()
@@ -188,25 +190,32 @@ class SharedMemory:
         if not all_records:
             return []
 
-        if HAS_NUMPY:
-            embeddings = np.array([r.embedding for r in all_records], dtype=np.float64)
-            q_emb = np.array(query_embedding, dtype=np.float64)
-            norms = np.linalg.norm(embeddings, axis=1)
-            q_norm = np.linalg.norm(q_emb)
-            norms[norms == 0.0] = 1.0
-            if q_norm == 0.0:
-                q_norm = 1.0
-            vector_scores = (np.dot(embeddings, q_emb) / (norms * q_norm)).tolist()
-        else:
-            vector_scores = [_cosine(query_embedding, record.embedding) for record in all_records]
+        q_len = len(query_embedding)
+        records_to_score = [r for r in all_records if len(r.embedding) == q_len]
 
-        for idx, record in enumerate(all_records):
+        vector_scores_map = {}
+        if records_to_score:
+            if HAS_NUMPY:
+                embeddings = np.array([r.embedding for r in records_to_score], dtype=np.float64)
+                q_emb = np.array(query_embedding, dtype=np.float64)
+                norms = np.linalg.norm(embeddings, axis=1)
+                q_norm = np.linalg.norm(q_emb)
+                norms[norms == 0.0] = 1.0
+                if q_norm == 0.0:
+                    q_norm = 1.0
+                scores = (np.dot(embeddings, q_emb) / (norms * q_norm)).tolist()
+            else:
+                scores = [_cosine(query_embedding, record.embedding) for record in records_to_score]
+            for record, score in zip(records_to_score, scores):
+                vector_scores_map[record.memory_id] = score
+
+        for record in all_records:
             tag_score = len(query_terms.intersection(record.tags)) * 0.2
             graph_enabled = _env_bool("MEMORY_GRAPH_ENABLED", default=True)
             keyword_score = len(query_terms.intersection(record.keywords)) * 0.1 if graph_enabled else 0.0
             text_terms = _terms(f"{record.task_topic} {record.summary}")
             text_score = len(query_terms.intersection(text_terms)) * 0.05
-            vector_score = vector_scores[idx]
+            vector_score = vector_scores_map.get(record.memory_id, 0.0)
             link_score = len(record.links) * 0.01 if graph_enabled else 0.0
             score = vector_score + tag_score + keyword_score + text_score + link_score
             if score > 0.15:
@@ -218,7 +227,17 @@ class SharedMemory:
         return records
 
     def embed(self, text: str) -> list[float]:
-        return self.embedding_provider.embed(text)
+        cache_key = hashlib.sha1(text.encode("utf-8")).hexdigest()
+        cached = self._embedding_cache.get(cache_key)
+        if cached is not None:
+            return list(cached)
+        vector = self.embedding_provider.embed(text)
+        if _env_bool("EMBEDDING_CACHE_ENABLED", default=True):
+            max_items = int(os.getenv("EMBEDDING_CACHE_MAX_ITEMS", "512"))
+            if len(self._embedding_cache) >= max_items:
+                self._embedding_cache.pop(next(iter(self._embedding_cache)))
+            self._embedding_cache[cache_key] = list(vector)
+        return vector
 
     def to_dict(self) -> list[dict[str, object]]:
         return [asdict(record) for record in self._all_records()]

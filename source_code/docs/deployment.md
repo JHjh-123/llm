@@ -54,6 +54,11 @@ export CODEACT_SANDBOX=subprocess
 export CODEACT_CPU_SECONDS=2
 export CODEACT_MEMORY_MB=512
 export CODEACT_TIMEOUT_SECONDS=5
+
+# 机制评测建议：保留真实动态 CodeAct，关闭 verifier 自动重试噪声
+export ORCHESTRATOR_MAX_RETRIES=0
+export MEMORY_ARCHIVIST_ENABLED=0
+export EMBEDDING_CACHE_ENABLED=1
 ```
 
 如果只做流程验证，可以使用 hash embedding：
@@ -76,6 +81,7 @@ export LLM_API_KEY=dummy
 ```bash
 python3 -m experiments.test_protocol
 python3 -m experiments.test_tools
+python3 -m experiments.test_mode_features
 ```
 
 预期输出：
@@ -85,6 +91,7 @@ protocol smoke test passed
 ```
 
 工具测试会输出一段 JSON，`ok` 应为 `true`。
+模式测试应输出 `mode feature smoke test passed`，用于确认 `text` 模式保持纯文本基线、`structured` 模式才启用非文本状态交换。
 
 ## 6. 运行正式 10 轮实验
 
@@ -93,8 +100,12 @@ export MEMORY_RESET=1
 export STATE_RESET=1
 export STATE_BACKEND=shared_memory
 export CODEACT_SANDBOX=subprocess
+export ORCHESTRATOR_MAX_RETRIES=0
+export MEMORY_ARCHIVIST_ENABLED=0
+export EMBEDDING_CACHE_ENABLED=1
 export EXPERIMENT_ROUNDS=10
-export TOKEN_COUNT_METHOD=unicode_heuristic
+export TOKEN_COUNT_METHOD=tiktoken
+export TIKTOKEN_ENCODING=cl100k_base
 python3 -m experiments.run_ab
 ```
 
@@ -140,9 +151,13 @@ curl --noproxy '*' http://127.0.0.1:8765/api/config
 
 ```bash
 export ABLATION_ROUNDS=10
-export TOKEN_COUNT_METHOD=unicode_heuristic
+export TOKEN_COUNT_METHOD=tiktoken
+export TIKTOKEN_ENCODING=cl100k_base
 export STATE_BACKEND=shared_memory
 export CODEACT_SANDBOX=subprocess
+export ORCHESTRATOR_MAX_RETRIES=0
+export MEMORY_ARCHIVIST_ENABLED=0
+export EMBEDDING_CACHE_ENABLED=1
 python3 -m experiments.ablation
 ```
 

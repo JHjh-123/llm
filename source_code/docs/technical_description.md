@@ -14,14 +14,14 @@
 
 | 模块 | 文件 | 作用 |
 | --- | --- | --- |
-| 多 Agent 运行时 | `multi_agent/runner.py` | 初始化 Agent、共享记忆、状态交换和实验上下文 |
+| 多 Agent 运行时 | `multi_agent/runner.py` | 初始化 9 个具体 Agent、共享记忆、状态交换和实验上下文 |
 | 编排器 | `multi_agent/orchestrator.py` | 执行 `planner -> researcher -> executor -> summarizer` 协作链路，支持顺序编排和可选 LangGraph |
-| Agent 实现 | `multi_agent/agents.py` | 定义规划、检索、执行、总结四类 Agent，并根据模式生成文本或结构化消息 |
+| Agent 实现 | `multi_agent/agents.py` | 定义规划、检索、执行、总结、验证、路由、安全审查、调试、记忆归档等 Agent，并根据模式生成文本或结构化消息 |
 | 结构化协议 | `multi_agent/protocol.py` | 定义 `agent-msg/v1`、握手、Agent Card、能力发现、协议映射、错误码和紧凑 wire format |
 | 共享记忆 | `multi_agent/memory.py` | 使用 SQLite 存储记忆，支持关键词、标签、embedding 混合检索和动态记忆链接 |
 | 状态交换 | `multi_agent/state_exchange.py` | 支持 `shared_memory` 和 `sqlite` 两种后端，embedding 可通过物理共享内存 IPC 传递，消息中只传状态引用 |
 | 指标采集 | `multi_agent/metrics.py` | 统计消息数、字符数、token 估算、耗时、记忆命中、状态传递次数和规模 |
-| 工具执行 | `multi_agent/tools.py` | 提供 CodeAct Python 动作空间，默认在受限子进程中运行，支持 CPU/内存/超时限制 |
+| 工具执行 | `multi_agent/tools.py` | 提供 CodeAct Python 动作空间，LLM 先生成安全工具计划，再编译为受限 Python 脚本在子进程中运行 |
 | 任务集 | `multi_agent/tasks.py` | 提供三组关联连续任务，用于验证跨任务复用 |
 | A/B 实验 | `experiments/run_ab.py` | 对相同任务运行 text 与 structured 两种模式 |
 | 消融实验 | `experiments/ablation.py` | 对比 text、仅协议、协议+状态、协议+记忆、协议+记忆网络五种变体 |
@@ -84,7 +84,7 @@ vector = np.ndarray(shape, dtype="float64", buffer=shm.buf)
 CODEACT_SANDBOX=subprocess
 ```
 
-CodeAct 代码会在独立 Python 子进程中执行，父进程通过 JSON 传入任务上下文和只读工具快照。子进程侧只暴露受控工具函数：
+CodeAct 代码会在独立 Python 子进程中执行，父进程通过 JSON 传入任务上下文和只读工具快照。正式路径中，Executor 先让 LLM 选择安全工具计划，例如是否读取 Markdown、检索记忆、计算指标、生成表格；系统再将计划编译为受限 Python 脚本。子进程侧只暴露受控工具函数：
 
 - `read_file`
 - `search_files`
@@ -136,6 +136,15 @@ score = cosine(query_embedding, memory_embedding)
 
 记忆网络开关由 `MEMORY_GRAPH_ENABLED` 控制。关闭时只做基础共享记忆，开启时会生成关键词、链接和访问计数，用于验证动态记忆组织的效果。
 
+正式评测默认启用两项在线复用优化，并保留 Agent 推理链路：
+
+| 开关 | 作用 |
+| --- | --- |
+| `MEMORY_ARCHIVIST_ENABLED=0` | 将记忆归档 Agent 移出在线关键路径，避免把维护性整理成本计入每个任务时延 |
+| `EMBEDDING_CACHE_ENABLED=1` | 对重复 query/summary embedding 做进程内缓存，减少真实 embedding 服务调用 |
+
+该设计参考了四类已有思路：MemGPT 的分层/虚拟上下文管理把外部存储视作可调度记忆层；Generative Agents 的 memory stream 使用检索到的记忆参与后续规划和反应；A-MEM/Zettelkasten 风格记忆强调关键词、标签和链接组成的动态知识网络；HippoRAG 使用图式关联降低多跳检索成本。系统实现上对应为“写入结构化记忆、命中后以 memory refs 和压缩摘要进入真实 Agent 上下文、图链接辅助召回、离线整理维护”。
+
 ## 7. 实验设计
 
 系统提供两类实验。
@@ -144,7 +153,7 @@ score = cosine(query_embedding, memory_embedding)
 
 `experiments.run_ab` 会对同一批任务分别运行：
 
-- `text`：自然语言长文本交接。
+- `text`：自然语言长文本交接，默认不启用非文本状态交换，作为纯文本协作基线。
 - `structured`：结构化协议 + 状态引用 + 共享记忆。
 
 输出：
@@ -177,8 +186,8 @@ data/ablation/
 
 | 赛题要求 | 当前覆盖情况 |
 | --- | --- |
-| 不少于 3 个 Agent | 已实现 4 个 Agent |
-| 覆盖规划、检索、执行、总结 | 已覆盖 |
+| 不少于 3 个 Agent | 已实现 9 个具体 Agent，核心链路至少运行 planner、researcher、executor、summarizer，并可启用 router/verifier/security_reviewer/debugger/archivist |
+| 覆盖规划、检索、执行、总结 | 已覆盖，并额外覆盖路由、验证、安全审查、调试和记忆归档 |
 | 结构化通信协议 | 已实现 `agent-msg/v1` |
 | 握手、能力发现、协议映射 | 已实现 handshake、Agent Card、protocol map |
 | 纯文本与结构化模式对比 | 已实现 A/B 实验 |

@@ -4,13 +4,13 @@
 
 系统目前支持：
 
-- 多 Agent 协作：`planner -> researcher -> executor -> summarizer`
-- 两种通信模式对比：纯文本通信 `text` 与结构化通信 `structured`
+- 多 Agent 协作：运行时注册 9 个具体 Agent，包括 `planner`、`researcher`、`executor`、`summarizer`、`verifier`、`router`、`security_reviewer`、`debugger`、`archivist`
+- 两种通信模式对比：纯文本通信 `text` 与结构化通信 `structured`；默认 A/B 中 `text` 不启用非文本状态交换，作为纯文本基线
 - 共享记忆：SQLite 持久化，支持关键词、标签、embedding 混合检索和动态记忆链接
 - 状态交换：embedding 默认写入 Python `multiprocessing.shared_memory`，SQLite 记录 `state_id` 和共享内存元数据
 - 指标采集：消息数、字符数、近似 token、耗时、记忆命中、非文本状态传递
 - 真实 LLM 后端：Ollama 或 OpenAI-compatible HTTP
-- CodeAct 工具执行：默认使用受限子进程沙箱，支持 CPU/内存/超时限制
+- CodeAct 工具执行：LLM 生成安全工具计划，系统编译为受限 Python 脚本并在子进程沙箱中运行，支持 CPU/内存/超时限制
 - 浏览器对比面板：直接查看 text 和 structured 的差距
 
 ## 交付文档
@@ -54,13 +54,20 @@ export CODEACT_SANDBOX=subprocess
 export CODEACT_CPU_SECONDS=2
 export CODEACT_MEMORY_MB=512
 export CODEACT_TIMEOUT_SECONDS=5
+
+# 正式机制评测建议关闭 verifier 自动重试噪声，归档维护放到离线路径
+export ORCHESTRATOR_MAX_RETRIES=0
+export MEMORY_ARCHIVIST_ENABLED=0
+export EMBEDDING_CACHE_ENABLED=1
 ```
 
-`STATE_BACKEND=shared_memory` 会把 embedding 向量放入物理共享内存段，协议消息只传 `state_id` 和 `shm_name/dtype/shape` 等元数据；`CODEACT_SANDBOX=subprocess` 会在独立 Python 进程中执行工具代码，并用 Linux resource limit 控制 CPU、内存和输出文件大小。
+`STATE_BACKEND=shared_memory` 会把 embedding 向量放入物理共享内存段，结构化协议消息只传 `state_id` 和 `shm_name/dtype/shape` 等元数据；默认 `text` 模式不启用该非文本状态交换，以保持纯文本协作基线。`CODEACT_SANDBOX=subprocess` 会在独立 Python 进程中执行工具代码，并用 Linux resource limit 控制 CPU、内存和输出文件大小。
+
+结构化模式命中共享记忆时，Agent 会把 memory refs 和压缩摘要作为上下文继续推理，避免展开长历史文本。CodeAct 正式路径由 LLM 选择工具计划并动态编译执行；模板脚本只作为异常兜底，报告会统计 `Dynamic CodeAct` 和 `Fallback CodeAct`。`MEMORY_ARCHIVIST_ENABLED=0` 将记忆归档 Agent 移出在线关键路径，适合正式评测；`EMBEDDING_CACHE_ENABLED=1` 避免重复任务反复请求同一 query embedding。
 
 ## 后端配置
 
-`LLM_BACKEND` 必须显式配置。系统不会再默认走 mock 或假模型。
+`LLM_BACKEND` 必须显式配置。系统不会再默认走模拟后端或假模型。
 
 ### Ollama 后端
 
@@ -114,8 +121,11 @@ export MEMORY_RESET=1
 export STATE_RESET=1
 export STATE_BACKEND=shared_memory
 export CODEACT_SANDBOX=subprocess
+export ORCHESTRATOR_MAX_RETRIES=0
+export MEMORY_ARCHIVIST_ENABLED=0
+export EMBEDDING_CACHE_ENABLED=1
 export EXPERIMENT_ROUNDS=10
-export TOKEN_COUNT_METHOD=unicode_heuristic
+export TOKEN_COUNT_METHOD=tiktoken
 python3 -m experiments.run_ab
 ```
 
@@ -149,6 +159,9 @@ export LLM_MODEL=qwen3:8b
 export OLLAMA_THINK=false
 export OLLAMA_NUM_PREDICT=128
 export EMBEDDING_BACKEND=hash
+export ORCHESTRATOR_MAX_RETRIES=0
+export MEMORY_ARCHIVIST_ENABLED=0
+export EMBEDDING_CACHE_ENABLED=1
 export ABLATION_ROUNDS=1
 python3 -m experiments.ablation
 ```

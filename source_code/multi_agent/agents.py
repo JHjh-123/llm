@@ -8,7 +8,8 @@ from multi_agent.memory import SharedMemory
 from multi_agent.metrics import MetricsCollector
 from multi_agent.protocol import Message, make_text_message
 from multi_agent.state_exchange import StateStore
-from multi_agent.tools import CodeActExecutor, ToolRegistry, build_codeact_for_task
+from multi_agent.tools import CodeActExecutor, ToolRegistry, build_codeact_for_task, build_codeact_from_plan
+import ast
 import re
 import json
 
@@ -25,6 +26,40 @@ def _extract_code(text: str) -> str | None:
     if "import " in text or "def " in text or "print(" in text:
         return text.strip()
     return None
+
+
+def _code_from_tool_plan(task: str, findings: str, text: str) -> str | None:
+    candidate = text.strip()
+    fenced = re.search(r"```(?:json)?\s*(.*?)\s*```", candidate, re.DOTALL | re.IGNORECASE)
+    if fenced:
+        candidate = fenced.group(1).strip()
+    match = re.search(r"\{.*\}", candidate, re.DOTALL)
+    candidate = match.group(0) if match else candidate
+    try:
+        plan = json.loads(candidate)
+    except Exception:
+        try:
+            pythonish = (
+                candidate.replace("true", "True")
+                .replace("false", "False")
+                .replace("null", "None")
+            )
+            plan = ast.literal_eval(pythonish)
+        except Exception:
+            lowered = text.lower()
+            if not any(token in lowered for token in ("markdown", "memory", "metric", "table", "file")):
+                return None
+            plan = {
+                "read_markdown_files": "markdown" in lowered or "file" in lowered,
+                "search_memory": "memory" in lowered,
+                "compute_metrics": "metric" in lowered or "compute" in lowered,
+                "make_table": "table" in lowered,
+            }
+    if not isinstance(plan, dict):
+        return None
+    allowed = {"read_markdown_files", "search_memory", "compute_metrics", "make_table"}
+    normalized = {key: bool(plan.get(key, True)) for key in allowed}
+    return build_codeact_from_plan(task, findings, normalized)
 
 
 @dataclass
@@ -123,14 +158,14 @@ class ResearchAgent(BaseAgent):
             if hit.keywords or hit.links:
                 ctx.metrics.record_memory_graph_hit(hit.memory_id)
 
-        memory_text = "\n".join(f"- {hit.summary}" for hit in hits) or "- no prior memory"
+        memory_refs = [hit.memory_id for hit in hits]
+        memory_text = "\n".join(f"- {hit.memory_id}: {_short(hit.summary, 180)}" for hit in hits) or "- no prior memory"
         prompt = (
             f"Task:\n{task}\n\nPlan:\n{plan.content}\n\n"
-            f"Relevant memory:\n{memory_text}\n\n"
-            "Return concise findings."
+            f"Relevant shared memory:\n{memory_text}\n\n"
+            "Return concise findings. If memory is relevant, explicitly reuse it and avoid repeating details that can be represented by memory IDs."
         )
         content = self._ask("You are a research agent.", prompt)
-        memory_refs = [hit.memory_id for hit in hits]
         payload_out = _short(content)
         state: dict[str, Any] = {}
         if ctx.mode == "structured" and memory_refs:
@@ -149,7 +184,7 @@ class ResearchAgent(BaseAgent):
         if state:
             payload["state"] = state
 
-        if memory_refs:
+        if ctx.mode == "structured" and memory_refs:
             ctx.metrics.record_non_text_transfer("memory_refs", len(memory_refs))
 
         return _message(ctx, self.name, "executor", content, payload, parent_id=plan.message_id)
@@ -167,66 +202,65 @@ class ExecutorAgent(BaseAgent):
     def execute(self, task: str, findings: Message, ctx: AgentContext) -> Message:
         prompt = (
             f"Task:\n{task}\n\nFindings:\n{findings.content}\n\n"
-            "Produce a concrete answer and include reusable facts."
+            "Produce a concrete answer and include reusable facts. If findings include memory IDs, use them as evidence references instead of restating long prior reasoning."
         )
         content = self._ask("You are an execution agent.", prompt)
 
-        # 1. Ask the LLM to write a Python script dynamically to verify or execute the task
+        # 1. Ask the LLM to select a tool plan, then compile it to safe Python.
         code_prompt = (
             f"Task:\n{task}\n\n"
             f"Findings:\n{findings.content}\n\n"
-            "Write a Python script to verify the findings or perform computation for this task. "
-            "You have direct access to these safe helper functions in the global namespace (do not redefine or import them):\n"
-            "- read_file(path: str, max_chars: int = 4000) -> str\n"
-            "- search_files(pattern: str = '*.md', max_results: int = 20) -> list[str]\n"
-            "- load_json(path: str) -> dict/list\n"
-            "- load_csv(path: str) -> list[dict]\n"
-            "- make_markdown_table(rows: list[dict], columns: list[str] = None) -> str\n"
-            "- compute_numeric_metrics(values: list) -> dict\n"
-            "- summarize_records(rows: list) -> dict\n"
-            "- search_memory(query: str, limit: int = 3) -> list[dict]\n\n"
-            "Constraints:\n"
-            "1. Your script must print the results or output variable dictionary.\n"
-            "2. Only collections, itertools, json, math, re, statistics can be imported.\n"
-            "3. Do not use blocked nodes like class definitions, async function definitions, or with statements.\n\n"
-            "Output your Python code enclosed in a ```python and ``` block."
+            "Choose which safe tools should be used to verify the findings or compute compact evidence. "
+            "Return ONLY a JSON object with boolean fields:\n"
+            "{\n"
+            '  "read_markdown_files": true or false,\n'
+            '  "search_memory": true or false,\n'
+            '  "compute_metrics": true or false,\n'
+            '  "make_table": true or false\n'
+            "}\n"
+            "Do not return Python code or explanatory prose."
         )
 
         tool_registry = ToolRegistry(memory=ctx.memory if ctx.enable_memory_search else None)
         code = None
         tool_result = None
+        code_from_dynamic_plan = False
+
         current_prompt = code_prompt
 
         # Reflection / retry loop with Security Reviewer and Debugger
         for attempt in range(3):
-            llm_code_response = self._ask("You are an execution agent writing Python code.", current_prompt)
-            extracted_code = _extract_code(llm_code_response)
+            llm_code_response = self._ask("You are an execution agent selecting safe tools.", current_prompt)
+            extracted_code = _code_from_tool_plan(task, findings.content, llm_code_response)
+            code_from_dynamic_plan = extracted_code is not None
+            if extracted_code is None:
+                extracted_code = _extract_code(llm_code_response)
+                code_from_dynamic_plan = False
 
             if not extracted_code:
-                current_prompt = code_prompt + "\n\nError: No ```python code block found in your response. Please ensure your Python script is inside a ```python and ``` block."
+                current_prompt = code_prompt + "\n\nError: No valid JSON tool plan found. Return only the JSON object."
                 continue
 
             # 1. Security Review Check
-            if ctx.enable_state_exchange:
-                security_reviewer = getattr(ctx, "security_reviewer", None)
-                if security_reviewer:
-                    review_msg = security_reviewer.review(task, extracted_code, ctx)
-                    ctx.metrics.record_message(review_msg)
-                    approved = True
-                    feedback = ""
-                    if review_msg.payload and "state" in review_msg.payload:
-                        approved = bool(review_msg.payload["state"].get("approved", True))
-                        feedback = str(review_msg.payload["state"].get("feedback", ""))
-                    
-                    if not approved:
-                        current_prompt = (
-                            f"Task:\n{task}\n\n"
-                            f"Your Python code failed security review.\n"
-                            f"Code attempted:\n```python\n{extracted_code}\n```\n\n"
-                            f"Safety Feedback: {feedback}\n\n"
-                            "Please correct the security violations and output a safe Python script inside a ```python and ``` block."
-                        )
-                        continue
+            security_reviewer = getattr(ctx, "security_reviewer", None)
+            if security_reviewer:
+                review_msg = security_reviewer.review(task, extracted_code, ctx)
+                ctx.metrics.record_message(review_msg)
+                approved = True
+                feedback = ""
+                if review_msg.payload and "state" in review_msg.payload:
+                    approved = bool(review_msg.payload["state"].get("approved", True))
+                    feedback = str(review_msg.payload["state"].get("feedback", ""))
+
+                if not approved:
+                    current_prompt = (
+                        f"Task:\n{task}\n\n"
+                        f"Your Python code failed security review.\n"
+                        f"Code attempted:\n```python\n{extracted_code}\n```\n\n"
+                        f"Safety Feedback: {feedback}\n\n"
+                        "Please correct the security violations and output a safe Python script inside a ```python and ``` block."
+                    )
+                    continue
 
             # 2. Subprocess Sandbox Execution
             run_result = self.codeact.run(extracted_code, context=tool_registry.as_context())
@@ -234,38 +268,38 @@ class ExecutorAgent(BaseAgent):
                 code = extracted_code
                 tool_result = run_result
                 break
-            else:
-                # 3. Debugger Reflection
-                debugger = getattr(ctx, "debugger", None)
-                if debugger:
-                    debug_msg = debugger.debug(task, extracted_code, run_result.error or "Unknown error", run_result.stdout or "", ctx)
-                    ctx.metrics.record_message(debug_msg)
-                    explanation = ""
-                    correction = ""
-                    if debug_msg.payload and "state" in debug_msg.payload:
-                        explanation = str(debug_msg.payload["state"].get("explanation", ""))
-                        correction = str(debug_msg.payload["state"].get("correction", ""))
-                    
-                    current_prompt = (
-                        f"Task:\n{task}\n\n"
-                        f"Your Python code failed to run.\n"
-                        f"Code attempted:\n```python\n{extracted_code}\n```\n\n"
-                        f"Debugger Explanation: {explanation}\n"
-                        f"Debugger Suggested Correction:\n{correction}\n\n"
-                        "Please rewrite the Python code to correct the error and output it inside a ```python and ``` block."
-                    )
-                else:
-                    current_prompt = (
-                        f"Task:\n{task}\n\n"
-                        f"Your Python code failed to run.\n"
-                        f"Code attempted:\n```python\n{extracted_code}\n```\n\n"
-                        f"Error encountered: {run_result.error}\n"
-                        f"Stdout captured: {run_result.stdout}\n\n"
-                        "Please analyze the failure, correct the code, and output a new corrected Python script inside a ```python and ``` block."
-                    )
 
-        # Failsafe fallback
-        is_dynamic = tool_result is not None and tool_result.ok and code != build_codeact_for_task(task, findings.content)
+            # 3. Debugger Reflection
+            debugger = getattr(ctx, "debugger", None)
+            if debugger:
+                debug_msg = debugger.debug(task, extracted_code, run_result.error or "Unknown error", run_result.stdout or "", ctx)
+                ctx.metrics.record_message(debug_msg)
+                explanation = ""
+                correction = ""
+                if debug_msg.payload and "state" in debug_msg.payload:
+                    explanation = str(debug_msg.payload["state"].get("explanation", ""))
+                    correction = str(debug_msg.payload["state"].get("correction", ""))
+
+                current_prompt = (
+                    f"Task:\n{task}\n\n"
+                    f"Your Python code failed to run.\n"
+                    f"Code attempted:\n```python\n{extracted_code}\n```\n\n"
+                    f"Debugger Explanation: {explanation}\n"
+                    f"Debugger Suggested Correction:\n{correction}\n\n"
+                    "Please rewrite the Python code to correct the error and output it inside a ```python and ``` block."
+                )
+            else:
+                current_prompt = (
+                    f"Task:\n{task}\n\n"
+                    f"Your Python code failed to run.\n"
+                    f"Code attempted:\n```python\n{extracted_code}\n```\n\n"
+                    f"Error encountered: {run_result.error}\n"
+                    f"Stdout captured: {run_result.stdout}\n\n"
+                    "Please analyze the failure, correct the code, and output a new corrected Python script inside a ```python and ``` block."
+                )
+
+        # Failsafe fallback keeps the task running, but metrics report when dynamic CodeAct did not succeed.
+        is_dynamic = tool_result is not None and tool_result.ok and code_from_dynamic_plan
         if not is_dynamic:
             code = build_codeact_for_task(task, findings.content)
             tool_result = self.codeact.run(code, context=tool_registry.as_context())
@@ -361,7 +395,7 @@ class SummarizerAgent(BaseAgent):
     def summarize(self, task: str, execution: Message, ctx: AgentContext) -> Message:
         prompt = (
             f"Task:\n{task}\n\nExecution result:\n{execution.content}\n\n"
-            "Summarize the final answer in 3 bullet points."
+            "Summarize the final answer in 3 bullet points. Preserve useful memory/state references without expanding them into long prose."
         )
         content = self._ask("You are a summarization agent.", prompt)
         payload = {
@@ -415,7 +449,6 @@ def _tags_for_task(task: str) -> list[str]:
 def _short(text: str, limit: int = 120) -> str:
     compact = " ".join(text.split())
     return compact if len(compact) <= limit else f"{compact[: limit - 3]}..."
-
 
 def _text_handoff(sender: str, receiver: str, content: str, payload: dict[str, Any]) -> str:
     """Natural-language handoff used as the baseline text collaboration mode."""

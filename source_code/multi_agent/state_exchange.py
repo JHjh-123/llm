@@ -73,7 +73,8 @@ class StateStore:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
             if reset and self.db_path.exists():
                 self.db_path.unlink()
-            self._conn = sqlite3.connect(self.db_path)
+            self._conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30.0)
+            self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.row_factory = sqlite3.Row
 
         self._init_schema()
@@ -196,7 +197,7 @@ class StateStore:
             vector = array.array("d")
             vector.frombytes(bytes(shm.buf[: length * 8]))
             return [float(value) for value in vector]
-        except FileNotFoundError:
+        except (FileNotFoundError, OSError, ValueError, PermissionError):
             return None
         finally:
             if shm is not None:

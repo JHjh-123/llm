@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any, Protocol, TypedDict
 
 from multi_agent.agents import AgentContext, ExecutorAgent, PlannerAgent, ResearchAgent, SummarizerAgent, VerifierAgent, RouterAgent, SecurityReviewerAgent, DebuggerAgent, MemoryArchivistAgent
@@ -52,7 +53,7 @@ class SequentialOrchestrator:
             return summary
 
         current_task = task
-        max_retries = 2
+        max_retries = _env_int("ORCHESTRATOR_MAX_RETRIES", 2)
         for retry in range(max_retries + 1):
             plan = self.agents["planner"].plan(current_task, ctx)
             metrics.record_message(plan)
@@ -191,7 +192,8 @@ class LangGraphOrchestrator:
         def check_verification(state: GraphState) -> str:
             feedback = state.get("verifier_feedback", "")
             retry_count = state.get("retry_count", 0)
-            if not feedback or retry_count >= 3:
+            max_retries = _env_int("ORCHESTRATOR_MAX_RETRIES", 2)
+            if not feedback or retry_count > max_retries:
                 return "end"
             return "replan"
 
@@ -237,3 +239,10 @@ def build_orchestrator(kind: str, agents: AgentBundle) -> Orchestrator:
         except ModuleNotFoundError:
             return SequentialOrchestrator(agents)
     return SequentialOrchestrator(agents)
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return max(0, int(os.getenv(name, str(default))))
+    except ValueError:
+        return default

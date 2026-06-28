@@ -1,13 +1,13 @@
 # Multi-Agent Communication Demo Report
 
-- Generated at: 2026-06-22T14:09:36
+- Generated at: 2026-06-26T15:30:33
 - Rounds: 1
 - OS: openEuler 24.03 (LTS-SP1)
 - Python: 3.13.13
 - LLM backend: ollama
 - LLM model: qwen3:8b
-- Embedding backend: hash
-- Embedding model: hash
+- Embedding backend: ollama
+- Embedding model: bge-m3:latest
 - Orchestrator: sequential
 - Token count method: unicode_heuristic
 - Memory path: data/memory.sqlite
@@ -38,30 +38,32 @@
 | Metric | Text | Structured |
 | --- | ---: | ---: |
 | Runs | 6 | 6 |
-| Avg messages | 4.0 | 4.0 |
-| Avg chars | 3695.5 | 2439.833 |
-| Std chars | 108.983 | 28.169 |
-| Avg approx tokens | 1107.833 | 1004.667 |
-| Std approx tokens | 31.767 | 16.152 |
-| Min approx tokens | 1067.0 | 989.0 |
-| Max approx tokens | 1156.0 | 1037.0 |
-| Avg elapsed ms | 5095.15 | 3938.18 |
-| Std elapsed ms | 2289.067 | 91.483 |
-| Avg memory hits | 2.333 | 2.667 |
-| Avg non-text transfers | 2.833 | 3.0 |
-| Avg non-text transfer size | 3945.167 | 3291.333 |
-| Avg protocol events | 0.0 | 5.0 |
-| Avg protocol approx tokens | 0.0 | 1833.0 |
+| Avg messages | 13.0 | 29.333 |
+| Avg chars | 12615.833 | 17769.667 |
+| Std chars | 978.027 | 5425.459 |
+| Avg approx tokens | 2983.333 | 5113.833 |
+| Std approx tokens | 224.221 | 1536.1 |
+| Min approx tokens | 2725.0 | 2053.0 |
+| Max approx tokens | 3367.0 | 6339.0 |
+| Avg elapsed ms | 29009.502 | 68239.086 |
+| Std elapsed ms | 1106.994 | 20265.287 |
+| Avg memory hits | 2.333 | 7.0 |
+| Avg non-text transfers | 3.667 | 10.0 |
+| Avg non-text transfer size | 19606.667 | 50369.333 |
+| Avg protocol events | 0.0 | 1.667 |
+| Avg protocol approx tokens | 0.0 | 210.833 |
+| Avg dynamic CodeAct | 0.0 | 0.0 |
+| Avg fallback CodeAct | 1.0 | 2.5 |
 
 ## Main Finding
 
-- Structured application-message token delta: **-9.31%**
-- Current conclusion: **有优势**
+- Structured application-message token delta: **71.41%**
+- Current conclusion: **暂未体现 token 优势**
 - Protocol negotiation overhead is reported separately from application messages.
 - Token counts use the configured method shown above; set TOKEN_COUNT_METHOD=tiktoken when tiktoken is installed.
-- State records persisted: **24**
-- Shared memories persisted: **12**
-- Avg memory links: **3.75**, total access count: **30**
+- State records persisted: **42**
+- Shared memories persisted: **20**
+- Avg memory links: **4.5**, total access count: **54**
 
 ## Agent Trace Example
 
@@ -69,17 +71,39 @@
 
 | From | To | Action | Refs | State Keys | Approx Tokens |
 | --- | --- | --- | ---: | --- | ---: |
-| planner | researcher | plan | 0 |  | 178 |
-| researcher | executor | research | 1 |  | 236 |
-| executor | summarizer | execute | 3 | embedding_dim, tool_ok, embedding_ref, tool_result_ref, sizes | 336 |
-| summarizer | user | summarize | 3 |  | 254 |
+| router | orchestrator | route | 0 | route | 106 |
+| planner | researcher | plan | 0 |  | 121 |
+| researcher | executor | research | 1 | mem_hits, graph_refs | 173 |
+| security_reviewer | orchestrator | security_review | 0 | approved, feedback | 97 |
+| debugger | executor | debug | 0 | explanation, correction | 209 |
+| security_reviewer | orchestrator | security_review | 0 | approved, feedback | 97 |
+| debugger | executor | debug | 0 | explanation, correction | 201 |
+| security_reviewer | orchestrator | security_review | 0 | approved, feedback | 97 |
+| debugger | executor | debug | 0 | explanation, correction | 204 |
+| executor | summarizer | execute | 3 | ok, emb, tool, bytes | 212 |
+| summarizer | user | summarize | 3 |  | 183 |
+| verifier | orchestrator | verify | 1 | approved, feedback | 245 |
+| planner | researcher | plan | 0 |  | 130 |
+| researcher | executor | research | 2 | mem_hits, graph_refs | 197 |
+| security_reviewer | orchestrator | security_review | 0 | approved, feedback | 97 |
+| debugger | executor | debug | 0 | explanation, correction | 193 |
+| security_reviewer | orchestrator | security_review | 0 | approved, feedback | 99 |
+| debugger | executor | debug | 0 | explanation, correction | 358 |
+| security_reviewer | orchestrator | security_review | 0 | approved, feedback | 98 |
+| debugger | executor | debug | 0 | explanation, correction | 348 |
+| executor | summarizer | execute | 3 | ok, emb, tool, bytes | 212 |
+| summarizer | user | summarize | 3 |  | 186 |
+| verifier | orchestrator | verify | 1 | approved, feedback | 159 |
+| archivist | user | archive | 3 | links_added, deleted, actions | 240 |
 
 ## Non-Text State Exchange Example
 
 | State ID | Type | Producer | Size Bytes | Metadata |
 | --- | --- | --- | ---: | --- |
-| state_0fa47a44c125 | embedding | executor | 512 | {"consumer_hint": "numpy.ndarray(shape, dtype='float64', buffer=SharedMemory(name).buf)", "dim": 64, "dtype": "float64", "memory_id": "003cd507f9e5", "shape": [64], "shm_name": "psm_6c5b0501", "shm_size": 512, "storage_backend": "shared_memory", "usage": "semantic_retrieval", "zero_copy_receiver": true} |
-| state_1d4aedcaaf7b | codeact_result | executor | 2021 | {"ok": true, "storage_backend": "sqlite", "tool": "codeact/python", "usage": "execution_evidence"} |
+| state_ab18aed8097e | embedding | executor | 8192 | {"consumer_hint": "numpy.ndarray(shape, dtype='float64', buffer=SharedMemory(name).buf)", "dim": 1024, "dtype": "float64", "memory_id": "3690e67a80f8", "shape": [1024], "shm_name": "psm_06bb6a7d", "shm_size": 8192, "storage_backend": "shared_memory", "usage": "semantic_retrieval", "zero_copy_receiver": true} |
+| state_1d1c11ce6d93 | codeact_result | executor | 2192 | {"code_source": "fallback_template", "ok": true, "storage_backend": "sqlite", "tool": "codeact/python", "usage": "execution_evidence"} |
+| state_342414197746 | embedding | executor | 8192 | {"consumer_hint": "numpy.ndarray(shape, dtype='float64', buffer=SharedMemory(name).buf)", "dim": 1024, "dtype": "float64", "memory_id": "87daabfd1839", "shape": [1024], "shm_name": "psm_4ce07687", "shm_size": 8192, "storage_backend": "shared_memory", "usage": "semantic_retrieval", "zero_copy_receiver": true} |
+| state_1e64255b6e9a | codeact_result | executor | 3525 | {"code_source": "fallback_template", "ok": true, "storage_backend": "sqlite", "tool": "codeact/python", "usage": "execution_evidence"} |
 
 ## Final Submission Checklist
 

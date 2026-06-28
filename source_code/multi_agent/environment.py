@@ -22,6 +22,9 @@ def collect_environment() -> dict[str, str]:
         "state_path": os.getenv("STATE_PATH", "data/state.sqlite"),
         "state_backend": os.getenv("STATE_BACKEND", "shared_memory"),
         "codeact_sandbox": os.getenv("CODEACT_SANDBOX", "subprocess"),
+        "orchestrator_max_retries": os.getenv("ORCHESTRATOR_MAX_RETRIES", "2"),
+        "memory_archivist_enabled": os.getenv("MEMORY_ARCHIVIST_ENABLED", "0"),
+        "embedding_cache_enabled": os.getenv("EMBEDDING_CACHE_ENABLED", "1"),
     }
 
 
