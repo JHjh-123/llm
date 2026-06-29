@@ -59,11 +59,16 @@ export CODEACT_TIMEOUT_SECONDS=5
 export ORCHESTRATOR_MAX_RETRIES=0
 export MEMORY_ARCHIVIST_ENABLED=0
 export EMBEDDING_CACHE_ENABLED=1
+export MEMORY_EMBEDDING_SOURCE=task
+export MEMORY_SEARCH_LIMIT=1
+export MEMORY_GRAPH_MAX_CANDIDATES=16
+export MEMORY_WRITE_POLICY=topic_once
+export MEMORY_WRITE_ON_REUSE=1
 ```
 
 `STATE_BACKEND=shared_memory` 会把 embedding 向量放入物理共享内存段，结构化协议消息只传 `state_id` 和 `shm_name/dtype/shape` 等元数据；默认 `text` 模式不启用该非文本状态交换，以保持纯文本协作基线。`CODEACT_SANDBOX=subprocess` 会在独立 Python 进程中执行工具代码，并用 Linux resource limit 控制 CPU、内存和输出文件大小。
 
-结构化模式命中共享记忆时，Agent 会把 memory refs 和压缩摘要作为上下文继续推理，避免展开长历史文本。CodeAct 正式路径由 LLM 选择工具计划并动态编译执行；模板脚本只作为异常兜底，报告会统计 `Dynamic CodeAct` 和 `Fallback CodeAct`。`MEMORY_ARCHIVIST_ENABLED=0` 将记忆归档 Agent 移出在线关键路径，适合正式评测；`EMBEDDING_CACHE_ENABLED=1` 避免重复任务反复请求同一 query embedding。
+结构化模式命中共享记忆时，Agent 会把 memory refs 和压缩摘要作为上下文继续推理，避免展开长历史文本。CodeAct 正式路径由 LLM 选择工具计划并动态编译执行；模板脚本只作为异常兜底，报告会统计 `Dynamic CodeAct` 和 `Fallback CodeAct`。`MEMORY_ARCHIVIST_ENABLED=0` 将记忆归档 Agent 移出在线关键路径，适合正式评测；`EMBEDDING_CACHE_ENABLED=1` 避免重复任务反复请求同一 query embedding；`MEMORY_EMBEDDING_SOURCE=task` 使用稳定任务主题作为记忆索引 embedding key；`MEMORY_SEARCH_LIMIT=1` 只把最相关记忆放入 Agent 上下文，降低在线推理时延；`MEMORY_GRAPH_MAX_CANDIDATES=16` 将图链接计算限制在关键词/标签相关和最近记忆候选池内，保留真实动态图链接同时减少全量扫描耗时；`MEMORY_WRITE_POLICY=topic_once` 对同一任务主题做写入合并，避免 10 轮重复写入近似相同记忆。
 
 ## 后端配置
 
@@ -124,6 +129,11 @@ export CODEACT_SANDBOX=subprocess
 export ORCHESTRATOR_MAX_RETRIES=0
 export MEMORY_ARCHIVIST_ENABLED=0
 export EMBEDDING_CACHE_ENABLED=1
+export MEMORY_EMBEDDING_SOURCE=task
+export MEMORY_SEARCH_LIMIT=1
+export MEMORY_GRAPH_MAX_CANDIDATES=16
+export MEMORY_WRITE_POLICY=topic_once
+export MEMORY_WRITE_ON_REUSE=1
 export EXPERIMENT_ROUNDS=10
 export TOKEN_COUNT_METHOD=tiktoken
 python3 -m experiments.run_ab
@@ -162,6 +172,11 @@ export EMBEDDING_BACKEND=hash
 export ORCHESTRATOR_MAX_RETRIES=0
 export MEMORY_ARCHIVIST_ENABLED=0
 export EMBEDDING_CACHE_ENABLED=1
+export MEMORY_EMBEDDING_SOURCE=task
+export MEMORY_SEARCH_LIMIT=1
+export MEMORY_GRAPH_MAX_CANDIDATES=16
+export MEMORY_WRITE_POLICY=topic_once
+export MEMORY_WRITE_ON_REUSE=1
 export ABLATION_ROUNDS=1
 python3 -m experiments.ablation
 ```
@@ -236,6 +251,36 @@ http://127.0.0.1:8765
 ```bash
 curl --noproxy '*' http://127.0.0.1:8765/api/config
 ```
+
+### Dashboard 2.0 quick commands
+
+The browser dashboard now exposes the following standard-library APIs:
+
+```text
+GET  /api/config
+GET  /api/tasks
+GET  /api/latest
+GET  /api/ablation
+POST /api/run
+```
+
+Quick 1-round A/B demo:
+
+```bash
+curl --noproxy '*' -X POST http://127.0.0.1:8765/api/run \
+  -H 'Content-Type: application/json' \
+  -d '{"task_group":"protocol_design","rounds":1,"mode":"ab"}'
+```
+
+Formal 10-round A/B run:
+
+```bash
+curl --noproxy '*' -X POST http://127.0.0.1:8765/api/run \
+  -H 'Content-Type: application/json' \
+  -d '{"task_group":"all","rounds":10,"mode":"ab"}'
+```
+
+The dashboard writes interactive run results to `reports/results.json` and reads formal ablation data from `reports/ablation_results.json`.
 
 ### 后台运行 dashboard
 

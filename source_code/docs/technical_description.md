@@ -142,8 +142,13 @@ score = cosine(query_embedding, memory_embedding)
 | --- | --- |
 | `MEMORY_ARCHIVIST_ENABLED=0` | 将记忆归档 Agent 移出在线关键路径，避免把维护性整理成本计入每个任务时延 |
 | `EMBEDDING_CACHE_ENABLED=1` | 对重复 query/summary embedding 做进程内缓存，减少真实 embedding 服务调用 |
+| `MEMORY_EMBEDDING_SOURCE=task` | 使用稳定任务主题作为记忆索引 embedding key，减少对每轮变化的生成文本重复 embedding |
+| `MEMORY_SEARCH_LIMIT=1` | 只取最相关记忆进入 Agent 上下文，降低在线 LLM 推理时延和上下文开销 |
+| `MEMORY_GRAPH_MAX_CANDIDATES=16` | 图链接先用关键词/标签和最近记录形成候选池，再做 embedding 相似度排序，避免对全部历史记忆做全量扫描 |
+| `MEMORY_WRITE_POLICY=topic_once` | 每个任务主题保留一条真实共享记忆，后续轮次复用该主题记忆，避免重复写入近似相同总结 |
+| `MEMORY_WRITE_ON_REUSE=1` | 兼容旧 `always` 写入策略；正式评测默认由 `MEMORY_WRITE_POLICY=topic_once` 接管 |
 
-该设计参考了四类已有思路：MemGPT 的分层/虚拟上下文管理把外部存储视作可调度记忆层；Generative Agents 的 memory stream 使用检索到的记忆参与后续规划和反应；A-MEM/Zettelkasten 风格记忆强调关键词、标签和链接组成的动态知识网络；HippoRAG 使用图式关联降低多跳检索成本。系统实现上对应为“写入结构化记忆、命中后以 memory refs 和压缩摘要进入真实 Agent 上下文、图链接辅助召回、离线整理维护”。
+该设计参考了四类已有思路：MemGPT 的分层/虚拟上下文管理把外部存储视作可调度记忆层；Generative Agents 的 memory stream 使用检索到的记忆参与后续规划和反应；A-MEM/Zettelkasten 风格记忆强调关键词、标签和链接组成的动态知识网络；GraphRAG 系统通常采用图索引、候选召回和再排序组合，而不是每次全量扫描所有节点。系统实现上对应为“写入结构化记忆、命中后以 memory refs 和压缩摘要进入真实 Agent 上下文、图链接辅助召回、离线整理维护、在线候选池限幅、同主题写入合并”。
 
 ## 7. 实验设计
 

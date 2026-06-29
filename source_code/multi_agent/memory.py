@@ -174,6 +174,22 @@ class SharedMemory:
         self._upsert_links(record.memory_id, record.links)
         return record
 
+    def latest_for_topic(self, source_agent: str, task_topic: str) -> MemoryRecord | None:
+        query = """
+            SELECT memory_id, source_agent, created_at, task_topic, summary, tags, embedding, keywords, links, access_count
+            FROM memories
+            WHERE source_agent = ? AND task_topic = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+        """
+        if self.db_type == "postgres":
+            with self._conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute(query.replace("?", "%s"), (source_agent, task_topic))
+                row = cur.fetchone()
+        else:
+            row = self._conn.execute(query, (source_agent, task_topic)).fetchone()
+        return _row_to_record(row) if row else None
+
     def search(self, query: str | list[float], limit: int = 3) -> list[MemoryRecord]:
         if isinstance(query, (list, tuple)):
             query_embedding = list(query)
@@ -336,6 +352,19 @@ class SharedMemory:
         keyword_set = set(keywords)
         all_records = self._all_records()
         records_to_score = [r for r in all_records if r.memory_id != exclude_id and len(r.embedding) == len(embedding)]
+        max_candidates = max(1, int(os.getenv("MEMORY_GRAPH_MAX_CANDIDATES", "16")))
+        if len(records_to_score) > max_candidates:
+            lexical_matches = [
+                record for record in records_to_score
+                if keyword_set.intersection(record.keywords) or keyword_set.intersection(record.tags)
+            ]
+            recent = list(reversed(records_to_score))[:max_candidates]
+            candidate_map = {record.memory_id: record for record in lexical_matches[:max_candidates]}
+            for record in recent:
+                candidate_map.setdefault(record.memory_id, record)
+                if len(candidate_map) >= max_candidates:
+                    break
+            records_to_score = list(candidate_map.values())
         if not records_to_score:
             return []
 

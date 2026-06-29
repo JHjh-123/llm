@@ -59,6 +59,11 @@ export CODEACT_TIMEOUT_SECONDS=5
 export ORCHESTRATOR_MAX_RETRIES=0
 export MEMORY_ARCHIVIST_ENABLED=0
 export EMBEDDING_CACHE_ENABLED=1
+export MEMORY_EMBEDDING_SOURCE=task
+export MEMORY_SEARCH_LIMIT=1
+export MEMORY_GRAPH_MAX_CANDIDATES=16
+export MEMORY_WRITE_POLICY=topic_once
+export MEMORY_WRITE_ON_REUSE=1
 ```
 
 如果只做流程验证，可以使用 hash embedding：
@@ -103,6 +108,11 @@ export CODEACT_SANDBOX=subprocess
 export ORCHESTRATOR_MAX_RETRIES=0
 export MEMORY_ARCHIVIST_ENABLED=0
 export EMBEDDING_CACHE_ENABLED=1
+export MEMORY_EMBEDDING_SOURCE=task
+export MEMORY_SEARCH_LIMIT=1
+export MEMORY_GRAPH_MAX_CANDIDATES=16
+export MEMORY_WRITE_POLICY=topic_once
+export MEMORY_WRITE_ON_REUSE=1
 export EXPERIMENT_ROUNDS=10
 export TOKEN_COUNT_METHOD=tiktoken
 export TIKTOKEN_ENCODING=cl100k_base
@@ -147,6 +157,32 @@ http://127.0.0.1:8765
 curl --noproxy '*' http://127.0.0.1:8765/api/config
 ```
 
+Dashboard APIs:
+
+```text
+GET  /api/config
+GET  /api/tasks
+GET  /api/latest
+GET  /api/ablation
+POST /api/run
+```
+
+Run a 1-round live demo:
+
+```bash
+curl --noproxy '*' -X POST http://127.0.0.1:8765/api/run \
+  -H 'Content-Type: application/json' \
+  -d '{"task_group":"protocol_design","rounds":1,"mode":"ab"}'
+```
+
+Run a 10-round formal dashboard experiment:
+
+```bash
+curl --noproxy '*' -X POST http://127.0.0.1:8765/api/run \
+  -H 'Content-Type: application/json' \
+  -d '{"task_group":"all","rounds":10,"mode":"ab"}'
+```
+
 ## 8. 运行机制消融实验
 
 ```bash
@@ -158,6 +194,11 @@ export CODEACT_SANDBOX=subprocess
 export ORCHESTRATOR_MAX_RETRIES=0
 export MEMORY_ARCHIVIST_ENABLED=0
 export EMBEDDING_CACHE_ENABLED=1
+export MEMORY_EMBEDDING_SOURCE=task
+export MEMORY_SEARCH_LIMIT=1
+export MEMORY_GRAPH_MAX_CANDIDATES=16
+export MEMORY_WRITE_POLICY=topic_once
+export MEMORY_WRITE_ON_REUSE=1
 python3 -m experiments.ablation
 ```
 

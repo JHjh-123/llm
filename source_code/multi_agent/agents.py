@@ -10,6 +10,7 @@ from multi_agent.protocol import Message, make_text_message
 from multi_agent.state_exchange import StateStore
 from multi_agent.tools import CodeActExecutor, ToolRegistry, build_codeact_for_task, build_codeact_from_plan
 import ast
+import os
 import re
 import json
 
@@ -149,10 +150,11 @@ class ResearchAgent(BaseAgent):
                 except Exception:
                     pass
 
+        memory_limit = max(1, int(os.getenv("MEMORY_SEARCH_LIMIT", "1")))
         if query_embedding is not None and ctx.enable_memory_search:
-            hits = ctx.memory.search(query_embedding, limit=3)
+            hits = ctx.memory.search(query_embedding, limit=memory_limit)
         else:
-            hits = ctx.memory.search(task, limit=3) if ctx.enable_memory_search else []
+            hits = ctx.memory.search(task, limit=memory_limit) if ctx.enable_memory_search else []
         for hit in hits:
             ctx.metrics.record_memory_hit(hit.memory_id)
             if hit.keywords or hit.links:
@@ -205,12 +207,15 @@ class ExecutorAgent(BaseAgent):
             "Produce a concrete answer and include reusable facts. If findings include memory IDs, use them as evidence references instead of restating long prior reasoning."
         )
         content = self._ask("You are an execution agent.", prompt)
+        reused_memory_refs = _memory_refs(findings)
 
         # 1. Ask the LLM to select a tool plan, then compile it to safe Python.
         code_prompt = (
             f"Task:\n{task}\n\n"
             f"Findings:\n{findings.content}\n\n"
             "Choose which safe tools should be used to verify the findings or compute compact evidence. "
+            f"Existing memory references available: {len(reused_memory_refs)}. "
+            "If existing memory references are available, set search_memory to false unless another memory lookup is truly necessary. "
             "Return ONLY a JSON object with boolean fields:\n"
             "{\n"
             '  "read_markdown_files": true or false,\n'
@@ -309,12 +314,24 @@ class ExecutorAgent(BaseAgent):
             ctx.metrics.record_dynamic_codeact()
             code_source = "dynamic_llm"
 
-        embedding = ctx.memory.embed(content)
+        embedding_source_text = _embedding_source_text(task, content)
+        embedding = ctx.memory.embed(embedding_source_text)
         memory = None
         refs: list[str] = []
         state_payload: dict[str, Any] = {"ok": tool_result.ok}
 
-        if ctx.enable_memory_write:
+        existing_topic_memory = None
+        write_policy = os.getenv("MEMORY_WRITE_POLICY", "topic_once").strip().lower()
+        if ctx.enable_memory_write and write_policy == "topic_once":
+            existing_topic_memory = ctx.memory.latest_for_topic(self.name, task)
+            should_write_memory = existing_topic_memory is None
+        elif ctx.enable_memory_write and write_policy == "on_miss":
+            should_write_memory = not reused_memory_refs
+        else:
+            should_write_memory = ctx.enable_memory_write and (
+                not reused_memory_refs or _env_bool("MEMORY_WRITE_ON_REUSE", default=True)
+            )
+        if should_write_memory:
             memory = ctx.memory.add(
                 source_agent=self.name,
                 task_topic=task,
@@ -323,6 +340,12 @@ class ExecutorAgent(BaseAgent):
                 embedding=embedding,
             )
             refs.append(memory.memory_id)
+        elif reused_memory_refs:
+            refs.extend(reused_memory_refs[:3])
+            state_payload["reused_memory_refs"] = reused_memory_refs[:3]
+        elif existing_topic_memory:
+            refs.append(existing_topic_memory.memory_id)
+            state_payload["reused_memory_refs"] = [existing_topic_memory.memory_id]
 
         if ctx.enable_state_exchange:
             embedding_state = ctx.state_store.put(
@@ -334,6 +357,7 @@ class ExecutorAgent(BaseAgent):
                     "memory_id": memory.memory_id if memory else None,
                     "dim": len(embedding),
                     "usage": "semantic_retrieval",
+                    "embedding_source": os.getenv("MEMORY_EMBEDDING_SOURCE", "task"),
                 },
             )
             tool_state = ctx.state_store.put(
@@ -449,6 +473,27 @@ def _tags_for_task(task: str) -> list[str]:
 def _short(text: str, limit: int = 120) -> str:
     compact = " ".join(text.split())
     return compact if len(compact) <= limit else f"{compact[: limit - 3]}..."
+
+
+def _embedding_source_text(task: str, content: str) -> str:
+    source = os.getenv("MEMORY_EMBEDDING_SOURCE", "task").strip().lower()
+    if source == "content":
+        return content
+    if source == "hybrid":
+        return f"{task}\n{_short(content, 320)}"
+    return task
+
+
+def _memory_refs(message: Message) -> list[str]:
+    refs = message.payload.get("refs", []) if message.payload else []
+    return [ref for ref in refs if isinstance(ref, str) and not ref.startswith("state_")]
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 def _text_handoff(sender: str, receiver: str, content: str, payload: dict[str, Any]) -> str:
     """Natural-language handoff used as the baseline text collaboration mode."""

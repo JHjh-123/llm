@@ -25,6 +25,11 @@ def collect_environment() -> dict[str, str]:
         "orchestrator_max_retries": os.getenv("ORCHESTRATOR_MAX_RETRIES", "2"),
         "memory_archivist_enabled": os.getenv("MEMORY_ARCHIVIST_ENABLED", "0"),
         "embedding_cache_enabled": os.getenv("EMBEDDING_CACHE_ENABLED", "1"),
+        "memory_embedding_source": os.getenv("MEMORY_EMBEDDING_SOURCE", "task"),
+        "memory_search_limit": os.getenv("MEMORY_SEARCH_LIMIT", "1"),
+        "memory_graph_max_candidates": os.getenv("MEMORY_GRAPH_MAX_CANDIDATES", "16"),
+        "memory_write_policy": os.getenv("MEMORY_WRITE_POLICY", "topic_once"),
+        "memory_write_on_reuse": os.getenv("MEMORY_WRITE_ON_REUSE", "1"),
     }
 
 

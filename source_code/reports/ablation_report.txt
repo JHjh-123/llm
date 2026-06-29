@@ -1,9 +1,9 @@
 # Multi-Agent Mechanism Ablation Report
 
-- Generated at: 2026-06-28T18:22:30
-- Run ID: bf188763f3
-- Rounds: 1
-- Tasks per round: 6
+- Generated at: 2026-06-29T14:02:21
+- Run ID: 2cee7889b3
+- Rounds: 10
+- Tasks per round: 4
 - OS: openEuler 24.03 (LTS-SP1)
 - LLM backend: ollama
 - LLM model: qwen3:8b
@@ -26,11 +26,11 @@
 
 | Variant | Avg Tokens | Token Delta | Avg Chars | Char Delta | Avg Elapsed ms | Memory Hits | Graph Hits | State Transfers | Memory Records | State Records | Avg Links | Dynamic CodeAct | Fallback CodeAct |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| text_baseline | 1575.5 | 0.0% | 7119.333 | 0.0% | 15158.752 | 0.0 | 0.0 | 0.0 | 0 | 0 | 0.0 | 1.0 | 0.0 |
-| structured_protocol | 985.167 | -37.47% | 3586.833 | -49.62% | 12862.661 | 0.0 | 0.0 | 0.0 | 0 | 0 | 0.0 | 1.0 | 0.0 |
-| structured_state | 1051.5 | -33.26% | 3722.167 | -47.72% | 13294.884 | 0.0 | 0.0 | 2.833 | 0 | 12 | 0.0 | 1.0 | 0.0 |
-| structured_memory | 1072.167 | -31.95% | 3660.5 | -48.58% | 13642.447 | 2.0 | 0.0 | 3.667 | 6 | 12 | 0.0 | 1.0 | 0.0 |
-| structured_memory_graph | 1110.0 | -29.55% | 3774.167 | -46.99% | 13806.664 | 2.0 | 2.0 | 3.667 | 6 | 12 | 2.5 | 1.0 | 0.0 |
+| text_baseline | 1288.8 | 0.0% | 5871.975 | 0.0% | 10368.051 | 0.0 | 0.0 | 0.0 | 0 | 0 | 0.0 | 1.0 | 0.0 |
+| structured_protocol | 999.05 | -22.48% | 3708.225 | -36.85% | 9939.226 | 0.0 | 0.0 | 0.0 | 0 | 0 | 0.0 | 1.0 | 0.0 |
+| structured_state | 1061.875 | -17.61% | 3787.125 | -35.51% | 9723.893 | 0.0 | 0.0 | 2.975 | 0 | 80 | 0.0 | 1.0 | 0.0 |
+| structured_memory | 1061.325 | -17.65% | 3690.1 | -37.16% | 9638.409 | 0.975 | 0.0 | 3.95 | 4 | 80 | 0.0 | 1.0 | 0.0 |
+| structured_memory_graph | 1072.9 | -16.75% | 3718.75 | -36.67% | 9591.03 | 0.975 | 0.975 | 3.95 | 4 | 80 | 1.5 | 1.0 | 0.0 |
 
 ## Total Token View
 
@@ -38,20 +38,20 @@ Application tokens exclude protocol negotiation. Total tokens add application an
 
 | Variant | App Tokens | Protocol Tokens | Total Tokens | Total Delta vs Text |
 | --- | ---: | ---: | ---: | ---: |
-| text_baseline | 1575.5 | 0.0 | 1575.5 | 0.0% |
-| structured_protocol | 985.167 | 206.167 | 1191.334 | -24.38% |
-| structured_state | 1051.5 | 205.833 | 1257.333 | -20.19% |
-| structured_memory | 1072.167 | 212.0 | 1284.167 | -18.49% |
-| structured_memory_graph | 1110.0 | 209.167 | 1319.167 | -16.27% |
+| text_baseline | 1288.8 | 0.0 | 1288.8 | 0.0% |
+| structured_protocol | 999.05 | 30.9 | 1029.95 | -20.08% |
+| structured_state | 1061.875 | 31.4 | 1093.275 | -15.17% |
+| structured_memory | 1061.325 | 30.975 | 1092.3 | -15.25% |
+| structured_memory_graph | 1072.9 | 30.925 | 1103.825 | -14.35% |
 
 ## Marginal Contribution
 
 | Step | Token Delta | Elapsed Delta | Memory Hit Delta | Graph Hit Delta | State Record Delta | Memory Link Delta |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| text_baseline_to_structured_protocol | -37.47% | -15.15% | 0.0 | 0.0 | 0 | 0.0 |
-| structured_protocol_to_structured_state | 6.73% | 3.36% | 0.0 | 0.0 | 12 | 0.0 |
-| structured_state_to_structured_memory | 1.97% | 2.61% | 2.0 | 0.0 | 0 | 0.0 |
-| structured_memory_to_structured_memory_graph | 3.53% | 1.2% | 0.0 | 2.0 | 0 | 2.5 |
+| text_baseline_to_structured_protocol | -22.48% | -4.14% | 0.0 | 0.0 | 0 | 0.0 |
+| structured_protocol_to_structured_state | 6.29% | -2.17% | 0.0 | 0.0 | 80 | 0.0 |
+| structured_state_to_structured_memory | -0.05% | -0.88% | 0.975 | 0.0 | 0 | 0.0 |
+| structured_memory_to_structured_memory_graph | 1.09% | -0.49% | 0.0 | 0.975 | 0 | 1.5 |
 
 ## Memory Reuse Efficiency
 
@@ -59,11 +59,11 @@ This view compares warm or memory-hit runs inside each variant. It is the direct
 
 | Variant | Hit Runs | No-Hit Runs | Avg Hit Elapsed ms | Avg No-Hit Elapsed ms | Hit Elapsed Delta | Round1 Elapsed ms | Later Elapsed ms | Later Delta |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| text_baseline | 0 | 6 | 0.0 | 15158.752 | n/a | 15158.752 | 0.0 | -100.0% |
-| structured_protocol | 0 | 6 | 0.0 | 12862.661 | n/a | 12862.661 | 0.0 | -100.0% |
-| structured_state | 0 | 6 | 0.0 | 13294.884 | n/a | 13294.884 | 0.0 | -100.0% |
-| structured_memory | 5 | 1 | 13240.539 | 15651.987 | -15.41% | 13642.447 | 0.0 | -100.0% |
-| structured_memory_graph | 5 | 1 | 13483.372 | 15423.127 | -12.58% | 13806.664 | 0.0 | -100.0% |
+| text_baseline | 0 | 40 | 0.0 | 10368.051 | n/a | 13628.968 | 10005.727 | -26.58% |
+| structured_protocol | 0 | 40 | 0.0 | 9939.226 | n/a | 11987.034 | 9711.692 | -18.98% |
+| structured_state | 0 | 40 | 0.0 | 9723.893 | n/a | 11366.377 | 9541.395 | -16.06% |
+| structured_memory | 39 | 1 | 9506.878 | 14768.125 | -35.63% | 11467.643 | 9435.161 | -17.72% |
+| structured_memory_graph | 39 | 1 | 9459.506 | 14720.473 | -35.74% | 11112.534 | 9421.974 | -15.21% |
 
 ## Interpretation
 
