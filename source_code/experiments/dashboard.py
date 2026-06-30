@@ -800,7 +800,7 @@ def _html() -> str:
     const taskNames = {
       'Read docs/deployment.md and summarize the required environment, startup commands, and expected output files.': '部署文档环境与产物摘要',
       'Based on the deployment constraints already analyzed, produce a concise reproducibility checklist for running the experiment on openEuler.': 'openEuler 实验复现检查清单',
-      'Read reports/results.json and compare text and structured modes on average tokens, elapsed time, memory hits, and non-text state transfers.': '实验结果指标对比分析',
+      'Read reports/results.json and reports/ablation_results.json if available, then compare text and structured modes on average tokens, elapsed time, memory hits, and non-text state transfers.': '实验结果与消融指标对比分析',
       'Explain whether the structured mode reduces communication overhead, using the available experiment results as evidence.': '结构化模式通信开销证据解释',
       'Read docs/technical_description.md and summarize the system modules, including protocol, memory, state exchange, orchestration, and CodeAct tools.': '系统技术模块摘要',
       'Assess which module contributes most to reducing communication cost and identify one remaining weakness in the current design.': '降开销贡献模块与弱点评估',

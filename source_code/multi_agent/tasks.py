@@ -4,7 +4,7 @@ TASK_GROUPS = {
         "Based on the deployment constraints already analyzed, produce a concise reproducibility checklist for running the experiment on openEuler.",
     ],
     "result_analysis": [
-        "Read reports/results.json and compare text and structured modes on average tokens, elapsed time, memory hits, and non-text state transfers.",
+        "Read reports/results.json and reports/ablation_results.json if available, then compare text and structured modes on average tokens, elapsed time, memory hits, and non-text state transfers.",
         "Explain whether the structured mode reduces communication overhead, using the available experiment results as evidence.",
     ],
     "technical_review": [

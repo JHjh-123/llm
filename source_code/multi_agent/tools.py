@@ -5,6 +5,7 @@ import csv
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import textwrap
@@ -191,6 +192,7 @@ class ToolRegistry:
             "compute_numeric_metrics": self.compute_numeric_metrics,
             "summarize_records": self.summarize_records,
             "search_memory": self.search_memory,
+            "read_task_files": self.read_task_files,
         }
 
     def read_file(self, path: str, max_chars: int = 4000) -> str:
@@ -208,7 +210,7 @@ class ToolRegistry:
                 break
         return results
 
-    def load_json(self, path: str, max_chars: int = 200000) -> Any:
+    def load_json(self, path: str, max_chars: int = 5_000_000) -> Any:
         return json.loads(self.read_file(path, max_chars=max_chars))
 
     def load_csv(self, path: str, max_rows: int = 100) -> list[dict[str, str]]:
@@ -273,8 +275,15 @@ class ToolRegistry:
             for record in records
         ]
 
+    def read_task_files(self, paths: list[str], max_chars: int = 4000) -> dict[str, Any]:
+        return _read_task_files(paths, read_file=self.read_file, load_json=self.load_json, max_chars=max_chars)
+
     def _resolve(self, path: str) -> Path:
         target = (self.workspace_root / path).resolve()
+        if not target.is_file() and not Path(path).is_absolute():
+            source_code_target = (self.workspace_root / "source_code" / path).resolve()
+            if source_code_target.is_file():
+                target = source_code_target
         try:
             target.relative_to(self.workspace_root)
         except ValueError as exc:
@@ -294,33 +303,65 @@ def build_codeact_for_task(task: str, findings: str) -> str:
     return build_codeact_from_plan(task, findings, plan)
 
 
+def extract_file_paths(task: str) -> list[str]:
+    pattern = re.compile(
+        r"(?<![\w/.-])((?:source_code/)?(?:docs|reports)/[A-Za-z0-9_.\-/]+?\.(?:md|txt|json)|README\.md|[A-Za-z0-9_.\-/]+?\.(?:md|json))(?![\w/.-])"
+    )
+    paths: list[str] = []
+    for match in pattern.finditer(task):
+        path = match.group(1).strip("`'\".,;:)")
+        if path and ".." not in Path(path).parts and path not in paths:
+            paths.append(path)
+    return paths
+
+
 def build_codeact_from_plan(task: str, findings: str, plan: dict[str, Any]) -> str:
     read_markdown_files = bool(plan.get("read_markdown_files", True))
     search_memory_enabled = bool(plan.get("search_memory", True))
     compute_metrics_enabled = bool(plan.get("compute_metrics", True))
     make_table_enabled = bool(plan.get("make_table", True))
+    explicit_paths = extract_file_paths(task)
     lines = [
         f"task = {task!r}",
         f"findings = {findings!r}",
+        f"target_files = {explicit_paths!r}",
+        "discovered_files = []",
         "files = []",
+        "file_evidence = {'read_files': [], 'missing_files': [], 'records': [], 'json_fields': {}}",
+        "missing_files = []",
+        "json_fields = {}",
         "memory_hits = []",
         "metrics = {}",
         "table = ''",
     ]
     if read_markdown_files:
-        lines.append("files = search_files('*.md', 5)")
+        lines.extend(
+            [
+                "discovered_files = search_files('*.md', 5)",
+                "files = discovered_files",
+            ]
+        )
+    lines.extend(
+        [
+            "file_evidence = read_task_files(target_files or discovered_files[:3])",
+            "if file_evidence['read_files']:",
+            "    files = file_evidence['read_files']",
+            "missing_files = file_evidence['missing_files']",
+            "json_fields = file_evidence['json_fields']",
+        ]
+    )
     if search_memory_enabled:
         lines.append("memory_hits = search_memory(task, 2)")
     if compute_metrics_enabled:
-        lines.append("metrics = compute_numeric_metrics([len(task), len(findings), len(memory_hits)])")
+        lines.append("metrics = compute_numeric_metrics([len(task), len(findings), len(memory_hits), len(files), len(missing_files)])")
     if make_table_enabled:
         lines.extend(
             [
-                "table = make_markdown_table([",
-                "    {'metric': 'task_chars', 'value': len(task)},",
-                "    {'metric': 'finding_chars', 'value': len(findings)},",
-                "    {'metric': 'memory_hits', 'value': len(memory_hits)},",
-                "])",
+                "table_rows = file_evidence['records'] or [",
+                "    {'path': 'task', 'kind': 'text', 'status': 'ok', 'summary': 'task_chars=' + str(len(task))},",
+                "    {'path': 'findings', 'kind': 'text', 'status': 'ok', 'summary': 'finding_chars=' + str(len(findings))},",
+                "]",
+                "table = make_markdown_table(table_rows, ['path', 'kind', 'status', 'summary'])",
             ]
         )
     lines.extend(
@@ -329,9 +370,14 @@ def build_codeact_from_plan(task: str, findings: str, plan: dict[str, Any]) -> s
             "    'task_words': len(task.split()),",
             "    'finding_chars': len(findings),",
             "    'workspace_files_seen': len(files),",
+            "    'target_files': target_files,",
+            "    'read_files': file_evidence['read_files'],",
+            "    'missing_files': missing_files,",
+            "    'json_fields': json_fields,",
+            "    'file_records': file_evidence['records'],",
             "    'memory_tool_hits': len(memory_hits),",
             "    'metrics': metrics,",
-            "    'table_preview': table[:240],",
+            "    'table_preview': table[:500],",
             "    'reusable': True,",
             "}",
             "print(result)",
@@ -395,6 +441,10 @@ _SUBPROCESS_RUNTIME = textwrap.dedent(
         except ValueError as exc:
             raise ValueError(f"Path is outside tool workspace: {path}") from exc
         if not target.is_file():
+            source_code_target = (workspace_root / "source_code" / path).resolve()
+            if source_code_target.is_file():
+                target = source_code_target
+        if not target.is_file():
             raise FileNotFoundError(path)
         return target
 
@@ -412,7 +462,7 @@ _SUBPROCESS_RUNTIME = textwrap.dedent(
                 break
         return results
 
-    def load_json(path, max_chars=200000):
+    def load_json(path, max_chars=5000000):
         return json.loads(read_file(path, max_chars=max_chars))
 
     def load_csv(path, max_rows=100):
@@ -472,6 +522,70 @@ _SUBPROCESS_RUNTIME = textwrap.dedent(
         scored.sort(key=lambda item: item[0], reverse=True)
         return [record for _, record in scored[:limit]]
 
+    def read_task_files(paths, max_chars=4000):
+        records = []
+        read_files = []
+        missing_files = []
+        json_fields = {}
+        for path in paths:
+            path = str(path)
+            lowered = path.lower()
+            try:
+                if lowered.endswith(".json"):
+                    data = load_json(path, max_chars=5000000)
+                    read_files.append(path)
+                    if isinstance(data, dict):
+                        keys = sorted([str(key) for key in data.keys()])[:12]
+                        json_fields[path] = keys
+                        records.append({
+                            "path": path,
+                            "kind": "json",
+                            "status": "ok",
+                            "summary": "keys=" + ", ".join(keys),
+                        })
+                    elif isinstance(data, list):
+                        json_fields[path] = ["list_len=" + str(len(data))]
+                        records.append({
+                            "path": path,
+                            "kind": "json",
+                            "status": "ok",
+                            "summary": "list_len=" + str(len(data)),
+                        })
+                    else:
+                        json_fields[path] = [type(data).__name__]
+                        records.append({
+                            "path": path,
+                            "kind": "json",
+                            "status": "ok",
+                            "summary": type(data).__name__,
+                        })
+                else:
+                    text = read_file(path, max_chars=max_chars)
+                    read_files.append(path)
+                    lines = [line.strip() for line in text.splitlines() if line.strip()]
+                    headings = [line.lstrip("# ").strip() for line in lines if line.startswith("#")][:5]
+                    summary = "; ".join(headings) if headings else (lines[0][:160] if lines else "empty file")
+                    records.append({
+                        "path": path,
+                        "kind": "text",
+                        "status": "ok",
+                        "summary": summary[:180],
+                    })
+            except Exception as exc:
+                missing_files.append(path)
+                records.append({
+                    "path": path,
+                    "kind": "missing",
+                    "status": "missing",
+                    "summary": type(exc).__name__,
+                })
+        return {
+            "read_files": read_files,
+            "missing_files": missing_files,
+            "records": records,
+            "json_fields": json_fields,
+        }
+
     safe_builtins = {name: getattr(builtins, name) for name in SAFE_BUILTIN_NAMES}
     safe_builtins["__import__"] = _safe_import
     env = {
@@ -484,6 +598,7 @@ _SUBPROCESS_RUNTIME = textwrap.dedent(
         "compute_numeric_metrics": compute_numeric_metrics,
         "summarize_records": summarize_records,
         "search_memory": search_memory,
+        "read_task_files": read_task_files,
     }
 
     try:
@@ -495,7 +610,7 @@ _SUBPROCESS_RUNTIME = textwrap.dedent(
             for key, value in env.items()
             if not key.startswith("__") and key not in {
                 "read_file", "search_files", "load_json", "load_csv", "make_markdown_table",
-                "compute_numeric_metrics", "summarize_records", "search_memory"
+                "compute_numeric_metrics", "summarize_records", "search_memory", "read_task_files"
             } and _json_safe(value)
         }
         print(json.dumps({"ok": True, "stdout": stdout.getvalue(), "variables": variables, "error": None}, ensure_ascii=False))
@@ -541,6 +656,47 @@ def _memory_records_from_context(context: dict[str, Any] | None) -> list[dict[st
             }
         )
     return safe_records
+
+
+def _read_task_files(paths: list[str], read_file: Any, load_json: Any, max_chars: int = 4000) -> dict[str, Any]:
+    records = []
+    read_files = []
+    missing_files = []
+    json_fields = {}
+    for raw_path in paths:
+        path = str(raw_path)
+        lowered = path.lower()
+        try:
+            if lowered.endswith(".json"):
+                data = load_json(path, max_chars=5_000_000)
+                read_files.append(path)
+                if isinstance(data, dict):
+                    keys = sorted(str(key) for key in data.keys())[:12]
+                    json_fields[path] = keys
+                    summary = "keys=" + ", ".join(keys)
+                elif isinstance(data, list):
+                    json_fields[path] = [f"list_len={len(data)}"]
+                    summary = f"list_len={len(data)}"
+                else:
+                    json_fields[path] = [type(data).__name__]
+                    summary = type(data).__name__
+                records.append({"path": path, "kind": "json", "status": "ok", "summary": summary[:180]})
+            else:
+                text = read_file(path, max_chars=max_chars)
+                read_files.append(path)
+                lines = [line.strip() for line in text.splitlines() if line.strip()]
+                headings = [line.lstrip("# ").strip() for line in lines if line.startswith("#")][:5]
+                summary = "; ".join(headings) if headings else (lines[0][:160] if lines else "empty file")
+                records.append({"path": path, "kind": "text", "status": "ok", "summary": summary[:180]})
+        except Exception as exc:
+            missing_files.append(path)
+            records.append({"path": path, "kind": "missing", "status": "missing", "summary": type(exc).__name__})
+    return {
+        "read_files": read_files,
+        "missing_files": missing_files,
+        "records": records,
+        "json_fields": json_fields,
+    }
 
 
 def _cell(value: Any) -> str:

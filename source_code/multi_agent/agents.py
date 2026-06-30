@@ -8,7 +8,7 @@ from multi_agent.memory import SharedMemory
 from multi_agent.metrics import MetricsCollector
 from multi_agent.protocol import Message, make_text_message
 from multi_agent.state_exchange import StateStore
-from multi_agent.tools import CodeActExecutor, ToolRegistry, build_codeact_for_task, build_codeact_from_plan
+from multi_agent.tools import CodeActExecutor, ToolRegistry, build_codeact_for_task, build_codeact_from_plan, extract_file_paths
 import ast
 import os
 import re
@@ -304,13 +304,20 @@ class ExecutorAgent(BaseAgent):
             code_source = "fallback_template"
         else:
             ctx.metrics.record_dynamic_codeact()
-            code_source = "dynamic_llm"
+            if code_source != "protocol_plan":
+                code_source = "dynamic_llm"
+
+        tool_evidence = _tool_evidence_text(tool_result.to_dict())
+        if tool_evidence:
+            content = f"{content}\n\nTool evidence:\n{tool_evidence}"
 
         embedding_source_text = _embedding_source_text(task, content)
         embedding = ctx.memory.embed(embedding_source_text)
         memory = None
         refs: list[str] = []
         state_payload: dict[str, Any] = {"ok": tool_result.ok}
+        if ctx.mode == "structured" and tool_evidence:
+            state_payload["evidence"] = _short(tool_evidence, 220)
 
         existing_topic_memory = None
         write_policy = os.getenv("MEMORY_WRITE_POLICY", "topic_once").strip().lower()
@@ -365,7 +372,7 @@ class ExecutorAgent(BaseAgent):
 
         output = _short(content)
         if ctx.mode == "structured" and ctx.enable_state_exchange:
-            output = f"state:{len(refs)} {_short(content, 72)}"
+            output = f"state:{len(refs)} {_short(tool_evidence or content, 110)}"
         payload = {
             "mt": "response",
             "a": "execute",
@@ -526,6 +533,33 @@ def _compact_tool_result(result: dict[str, Any], mode: str) -> dict[str, Any]:
     }
 
 
+def _tool_evidence_text(result: dict[str, Any]) -> str:
+    variables = result.get("variables", {}) if isinstance(result.get("variables"), dict) else {}
+    data = variables.get("result", {}) if isinstance(variables.get("result"), dict) else {}
+    read_files = data.get("read_files") or variables.get("read_files") or []
+    missing_files = data.get("missing_files") or variables.get("missing_files") or []
+    json_fields = data.get("json_fields") or variables.get("json_fields") or {}
+    table_preview = data.get("table_preview") or variables.get("table") or ""
+    parts = []
+    if read_files:
+        parts.append("read_files=" + ", ".join(str(path) for path in read_files[:5]))
+    if missing_files:
+        parts.append("missing_files=" + ", ".join(str(path) for path in missing_files[:5]))
+    if isinstance(json_fields, dict) and json_fields:
+        field_parts = []
+        for path, fields in list(json_fields.items())[:3]:
+            if isinstance(fields, list):
+                field_parts.append(f"{path}: {', '.join(str(field) for field in fields[:6])}")
+            else:
+                field_parts.append(f"{path}: {fields}")
+        parts.append("json_fields=" + "; ".join(field_parts))
+    if table_preview:
+        parts.append("table=" + _short(str(table_preview), 360))
+    if result.get("error"):
+        parts.append("tool_error=" + _short(str(result.get("error")), 160))
+    return _short(" | ".join(parts), 700)
+
+
 def _env_bool(name: str, default: bool) -> bool:
     value = os.getenv(name)
     if value is None:
@@ -611,6 +645,21 @@ class VerifierAgent(BaseAgent):
 
 class RouterAgent(BaseAgent):
     def route(self, task: str, ctx: AgentContext) -> Message:
+        if extract_file_paths(task):
+            route_choice = "full_pipeline"
+            payload = {
+                "mt": "response",
+                "a": "route",
+                "in": {"task": _short(task)},
+                "out": f"route={route_choice}",
+                "refs": [],
+                "state": {
+                    "route": route_choice,
+                    "reason": "explicit_file_path"
+                }
+            }
+            return _message(ctx, self.name, "orchestrator", "Route to full pipeline because task names concrete files.", payload)
+
         system_prompt = (
             "You are a task routing agent. Your job is to analyze the user's task and decide the optimal execution path.\n"
             "Available routes:\n"
