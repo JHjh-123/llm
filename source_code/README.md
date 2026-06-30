@@ -70,6 +70,8 @@ export MEMORY_WRITE_ON_REUSE=1
 
 结构化模式命中共享记忆时，Agent 会把 memory refs 和压缩摘要作为上下文继续推理，避免展开长历史文本。CodeAct 正式路径由 LLM 选择工具计划并动态编译执行；模板脚本只作为异常兜底，报告会统计 `Dynamic CodeAct` 和 `Fallback CodeAct`。`MEMORY_ARCHIVIST_ENABLED=0` 将记忆归档 Agent 移出在线关键路径，适合正式评测；`EMBEDDING_CACHE_ENABLED=1` 避免重复任务反复请求同一 query embedding；`MEMORY_EMBEDDING_SOURCE=task` 使用稳定任务主题作为记忆索引 embedding key；`MEMORY_SEARCH_LIMIT=1` 只把最相关记忆放入 Agent 上下文，降低在线推理时延；`MEMORY_GRAPH_MAX_CANDIDATES=16` 将图链接计算限制在关键词/标签相关和最近记忆候选池内，保留真实动态图链接同时减少全量扫描耗时；`MEMORY_WRITE_POLICY=topic_once` 对同一任务主题做写入合并，避免 10 轮重复写入近似相同记忆。
 
+实验口径上，`text` 和 `structured` 会运行同一批 `DEFAULT_TASKS`。`text` 模式使用自然语言 handoff 作为纯文本协作基线；`structured` 模式使用协议化工具计划，并通过 `refs/state_id` 传递工具证据。因此 A/B 结果比较的是端到端多 Agent 通信机制，而不是单独比较某个 Agent 的推理能力。任务文本中出现的文件路径会由 CodeAct 工具读取，读取结果以 `Tool evidence`、`state_id` 或 compact table 的形式进入后续 Agent 上下文。
+
 ## 后端配置
 
 `LLM_BACKEND` 必须显式配置。系统不会再默认走模拟后端或假模型。
