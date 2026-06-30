@@ -66,9 +66,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
         try:
             payload = self._read_json()
             task_group = str(payload.get("task_group") or "all")
+            task_index = payload.get("task_index", "all")
             rounds = int(payload.get("rounds") or 1)
             mode = str(payload.get("mode") or "ab")
-            result = run_experiment(task_group=task_group, rounds=rounds, mode=mode)
+            result = run_experiment(task_group=task_group, task_index=task_index, rounds=rounds, mode=mode)
         except Exception as exc:
             self._send_json({"ok": False, "error": f"{type(exc).__name__}: {exc}"}, status=500)
             return
@@ -99,13 +100,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.wfile.write(encoded)
 
 
-def run_experiment(task_group: str, rounds: int, mode: str) -> dict[str, Any]:
+def run_experiment(task_group: str, rounds: int, mode: str, task_index: Any = "all") -> dict[str, Any]:
     if rounds not in {1, 10}:
         raise ValueError("rounds must be 1 or 10")
     if mode not in {"ab", "text", "structured"}:
         raise ValueError("mode must be ab, text, or structured")
 
-    tasks = _select_tasks(task_group)
+    tasks = _select_tasks(task_group, task_index)
     run_id = uuid.uuid4().hex[:10]
     started = time.perf_counter()
 
@@ -139,6 +140,7 @@ def run_experiment(task_group: str, rounds: int, mode: str) -> dict[str, Any]:
             "run_id": run_id,
             "generated_at": datetime.now().isoformat(timespec="seconds"),
             "task_group": task_group,
+            "task_index": task_index,
             "tasks": tasks,
             "rounds": rounds,
             "requested_mode": mode,
@@ -151,12 +153,19 @@ def run_experiment(task_group: str, rounds: int, mode: str) -> dict[str, Any]:
     return result
 
 
-def _select_tasks(task_group: str) -> list[str]:
+def _select_tasks(task_group: str, task_index: Any = "all") -> list[str]:
     if task_group == "all":
-        return list(DEFAULT_TASKS)
-    if task_group not in TASK_GROUPS:
-        raise ValueError(f"unknown task_group: {task_group}")
-    return list(TASK_GROUPS[task_group])
+        tasks = list(DEFAULT_TASKS)
+    else:
+        if task_group not in TASK_GROUPS:
+            raise ValueError(f"unknown task_group: {task_group}")
+        tasks = list(TASK_GROUPS[task_group])
+    if task_index in (None, "", "all"):
+        return tasks
+    index = int(task_index)
+    if index < 0 or index >= len(tasks):
+        raise ValueError(f"task_index out of range: {task_index}")
+    return [tasks[index]]
 
 
 def _load_latest_results() -> dict[str, Any]:
@@ -234,13 +243,14 @@ def _html() -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>多智能体低开销通信实验面板</title>
+  <title>多智能体协作通信评测中心</title>
   <style>
     :root {
       color-scheme: light;
-      --bg: #eef3f8;
+      --bg: #edf2f7;
       --panel: #ffffff;
       --panel-soft: #f7fafc;
+      --panel-warm: #fffaf0;
       --text: #172033;
       --muted: #607086;
       --line: #d9e2ec;
@@ -253,105 +263,230 @@ def _html() -> str:
       --warn: #b45309;
       --blue: #2563eb;
       --shadow: 0 10px 28px rgba(15, 23, 42, .06);
+      --shadow-strong: 0 18px 42px rgba(15, 23, 42, .10);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      background: var(--bg);
+      background:
+        linear-gradient(180deg, #e9f1f8 0, #f6f8fb 290px, #edf2f7 100%);
       color: var(--text);
       font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       letter-spacing: 0;
     }
     header {
-      padding: 20px 30px 16px;
-      background: linear-gradient(90deg, #ffffff 0%, #f3fbfa 58%, #eff6ff 100%);
-      border-bottom: 1px solid var(--line);
+      padding: 22px 30px 18px;
+      background:
+        linear-gradient(135deg, #0f172a 0%, #134e4a 54%, #1e3a5f 100%);
+      border-bottom: 1px solid rgba(255,255,255,.18);
+      color: #ffffff;
     }
-    h1 { margin: 0; font-size: 26px; line-height: 1.25; }
-    .subtitle { margin-top: 6px; color: var(--muted); font-size: 14px; }
+    .topbar {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 22px;
+    }
+    .brand { min-width: 320px; }
+    h1 { margin: 0; font-size: 28px; line-height: 1.25; }
     main { max-width: none; margin: 0; padding: 18px 30px 34px; }
     .control {
       display: grid;
-      grid-template-columns: minmax(320px, 2fr) 190px 270px repeat(3, 138px);
+      grid-template-columns: minmax(260px, 1.35fr) minmax(260px, 1.35fr) 170px 250px repeat(3, 132px);
       gap: 12px;
       align-items: end;
-      margin-bottom: 10px;
-      padding: 14px;
+      margin: -30px 0 14px;
+      padding: 16px;
       background: var(--panel);
       border: 1px solid var(--line);
-      border-radius: 10px;
-      box-shadow: var(--shadow);
+      border-radius: 12px;
+      box-shadow: var(--shadow-strong);
+      position: relative;
+      z-index: 2;
     }
     label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 750; }
     select, button {
       height: 40px;
       border: 1px solid var(--line);
-      border-radius: 6px;
+      border-radius: 8px;
       background: var(--panel);
       color: var(--text);
       font: inherit;
       padding: 0 10px;
     }
-    button { cursor: pointer; font-weight: 800; }
+    button { cursor: pointer; font-weight: 800; transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease; }
+    button:hover { transform: translateY(-1px); box-shadow: 0 8px 18px rgba(15, 23, 42, .08); }
     button.primary { border-color: var(--structured); background: var(--structured); color: white; }
     button:disabled { cursor: wait; opacity: .62; }
     .status {
-      min-height: 22px;
-      margin: 0 0 14px;
+      display: none;
+    }
+    .task-context {
+      margin: -2px 0 14px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, .86);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .task-context summary {
+      min-height: 44px;
+      padding: 12px 16px;
+      cursor: pointer;
+      color: #263244;
+      font-weight: 850;
+      list-style-position: inside;
+    }
+    .task-context summary span {
       color: var(--muted);
+      font-weight: 750;
+    }
+    .task-context-body {
+      display: grid;
+      gap: 8px;
+      padding: 0 16px 14px;
+    }
+    .task-prompt {
+      display: grid;
+      grid-template-columns: 118px 1fr;
+      gap: 12px;
+      padding: 10px 12px;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      background: #f8fafc;
+    }
+    .task-prompt strong {
+      color: var(--structured);
       font-size: 13px;
-      padding-left: 4px;
+    }
+    .task-prompt p {
+      margin: 0;
+      color: #334155;
+      font-size: 13px;
+      line-height: 1.45;
     }
     .section {
       margin-bottom: 14px;
       background: var(--panel);
       border: 1px solid var(--line);
-      border-radius: 10px;
+      border-radius: 12px;
       overflow: hidden;
       box-shadow: var(--shadow);
     }
     .section h2 {
       margin: 0;
-      padding: 11px 14px;
+      padding: 12px 16px;
       border-bottom: 1px solid var(--line);
       background: var(--panel-soft);
       font-size: 16px;
+      letter-spacing: 0;
     }
     .overview {
       display: grid;
-      grid-template-columns: 1.2fr repeat(4, minmax(150px, 1fr));
-      gap: 10px;
+      grid-template-columns: 1.25fr repeat(4, minmax(150px, 1fr));
+      gap: 12px;
       margin-bottom: 14px;
     }
     .overview-card {
       min-height: 88px;
       padding: 13px 14px;
       border: 1px solid var(--line);
-      border-radius: 10px;
+      border-radius: 12px;
       background: var(--panel);
       box-shadow: var(--shadow);
+      position: relative;
+      overflow: hidden;
+    }
+    .overview-card::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 4px;
+      height: 100%;
+      background: var(--structured);
     }
     .overview-card .label { color: var(--muted); font-size: 12px; font-weight: 800; }
     .overview-card .value { margin-top: 8px; font-size: 24px; font-weight: 900; overflow-wrap: anywhere; }
     .overview-card .hint { margin-top: 4px; color: var(--muted); font-size: 12px; }
+    .evidence-strip {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .evidence {
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+    .evidence .label { color: var(--muted); font-size: 12px; font-weight: 800; }
+    .evidence .value { margin-top: 6px; font-size: 15px; font-weight: 900; }
     .flow {
       display: grid;
       grid-template-columns: repeat(6, 1fr);
-      gap: 10px;
-      padding: 14px;
+      gap: 12px;
+      padding: 16px;
     }
     .agent {
-      min-height: 86px;
+      min-height: 92px;
       border: 1px solid var(--line);
-      border-radius: 9px;
-      padding: 10px;
-      background: #fff;
+      border-radius: 10px;
+      padding: 12px;
+      background: linear-gradient(180deg, #ffffff, var(--agent-bg, #f8fafc));
+      position: relative;
+      overflow: hidden;
+      --agent-color: #64748b;
+      --agent-bg: #f8fafc;
     }
-    .agent .name { font-weight: 850; }
-    .agent .state { margin-top: 10px; color: var(--muted); font-size: 12px; }
-    .agent.running { border-color: var(--blue); box-shadow: inset 0 0 0 1px var(--blue); }
-    .agent.done { border-color: #86efac; background: #f0fdf4; }
+    .agent::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 4px;
+      background: var(--agent-color);
+    }
+    .agent::after {
+      content: "→";
+      position: absolute;
+      right: -13px;
+      top: 31px;
+      color: #94a3b8;
+      font-weight: 900;
+      z-index: 1;
+    }
+    .agent:last-child::after {
+      content: "";
+    }
+    .agent.router { --agent-color: #2563eb; --agent-bg: #eff6ff; }
+    .agent.planner { --agent-color: #7c3aed; --agent-bg: #f5f3ff; }
+    .agent.researcher { --agent-color: #0f766e; --agent-bg: #ecfdf5; }
+    .agent.executor { --agent-color: #b45309; --agent-bg: #fff7ed; }
+    .agent.summarizer { --agent-color: #be123c; --agent-bg: #fff1f2; }
+    .agent.verifier { --agent-color: #475569; --agent-bg: #f8fafc; }
+    .agent .name { font-weight: 850; color: #172033; }
+    .agent .state {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      margin-top: 12px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: #eef2f7;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .agent.running { border-color: var(--agent-color); box-shadow: inset 0 0 0 1px var(--agent-color), 0 10px 22px rgba(37, 99, 235, .10); }
+    .agent.running .state { background: #dbeafe; color: #1d4ed8; }
+    .agent.done { border-color: color-mix(in srgb, var(--agent-color) 58%, white); }
+    .agent.done .state { background: color-mix(in srgb, var(--agent-color) 14%, white); color: var(--agent-color); }
     .agent.failed { border-color: #fecaca; background: #fef2f2; }
+    .agent.failed .state { background: #fee2e2; color: var(--bad); }
     .compare {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -360,37 +495,104 @@ def _html() -> str:
     .mode-card {
       background: var(--panel);
       border: 1px solid var(--line);
-      border-radius: 10px;
+      border-radius: 12px;
       overflow: hidden;
       margin-bottom: 14px;
       box-shadow: var(--shadow);
     }
-    .mode-card h2 { display: flex; justify-content: space-between; align-items: baseline; }
+    .mode-card h2 {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding: 16px 18px 13px;
+      background: linear-gradient(180deg, #ffffff, #f8fafc);
+    }
+    .mode-card h2 span {
+      display: inline-flex;
+      min-height: 28px;
+      align-items: center;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #eef2f7;
+      color: #475569;
+      font-size: 14px;
+    }
+    .mode-note {
+      margin: 0 14px 10px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 750;
+      color: #475569;
+      background: #f1f5f9;
+      border: 1px solid var(--line);
+    }
+    .mode-card.structured .mode-note {
+      color: #0f766e;
+      background: #ecfdf5;
+      border-color: #a7f3d0;
+    }
+    .mode-card.text { border-top: 4px solid #64748b; }
+    .mode-card.structured { border-top: 4px solid var(--structured); }
     .mode-card.text h2 { color: var(--text-mode); }
     .mode-card.structured h2 { color: var(--structured); }
     .summary-text {
-      padding: 12px 14px;
-      min-height: 126px;
+      margin: 0 14px 12px;
+      padding: 14px 16px;
+      min-height: 150px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fbfcfe;
       color: #263244;
       line-height: 1.45;
       white-space: pre-wrap;
-      border-bottom: 1px solid var(--line);
+    }
+    .summary-area {
+      display: grid;
+      grid-template-columns: minmax(0, 1.6fr) minmax(230px, .9fr);
+      gap: 12px;
+      margin: 0 14px 12px;
+    }
+    .summary-area .summary-text {
+      margin: 0;
+      min-height: 150px;
+    }
+    .evidence-panel {
+      min-height: 150px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: linear-gradient(180deg, #f8fffc, #ffffff);
+    }
+    .evidence-panel h3 {
+      margin: 0 0 10px;
+      font-size: 14px;
+      color: var(--structured);
+    }
+    .evidence-row {
+      margin-top: 10px;
+    }
+    .evidence-row strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 12px;
+      color: var(--muted);
     }
     .metrics {
       display: grid;
-      grid-template-columns: repeat(4, minmax(128px, 1fr));
-      gap: 8px;
+      grid-template-columns: repeat(4, minmax(136px, 1fr));
+      gap: 10px;
       padding: 12px;
     }
     .metric {
       border: 1px solid var(--line);
-      border-radius: 9px;
-      padding: 10px;
+      border-radius: 10px;
+      padding: 11px;
       background: var(--panel-soft);
       min-height: 72px;
     }
     .metric .label { color: var(--muted); font-size: 12px; font-weight: 750; }
-    .metric .value { margin-top: 6px; font-size: 20px; font-weight: 850; overflow-wrap: anywhere; }
+    .metric .value { margin-top: 7px; font-size: 22px; font-weight: 900; overflow-wrap: anywhere; }
     .refs { padding: 0 12px 12px; display: grid; gap: 8px; }
     .pill-line { display: flex; flex-wrap: wrap; gap: 6px; min-height: 28px; align-items: center; }
     .pill {
@@ -415,18 +617,82 @@ def _html() -> str:
     }
     .chart, .small-card {
       border: 1px solid var(--line);
-      border-radius: 9px;
+      border-radius: 10px;
       padding: 12px;
       background: var(--panel-soft);
-      min-height: 126px;
+      min-height: 136px;
     }
     .chart-title, .small-card .label { color: var(--muted); font-size: 12px; font-weight: 800; margin-bottom: 12px; }
-    .bar-row { display: grid; grid-template-columns: 74px 1fr 70px; gap: 8px; align-items: center; margin: 8px 0; font-size: 12px; }
-    .bar-track { height: 14px; border-radius: 99px; background: #e5e7eb; overflow: hidden; }
+    .wide-bars {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      padding: 12px;
+      border-bottom: 1px solid var(--line);
+    }
+    .wide-chart {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px;
+      background: #ffffff;
+    }
+    .wide-chart h3 {
+      margin: 0 0 10px;
+      font-size: 14px;
+    }
+    .chart-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .legend-dot {
+      width: 18px;
+      height: 8px;
+      border-radius: 99px;
+      background: #64748b;
+    }
+    .legend-dot.structured {
+      background: var(--structured);
+    }
+    .compare-row {
+      display: grid;
+      grid-template-columns: 92px 1fr 72px 1fr 72px 86px;
+      gap: 8px;
+      align-items: center;
+      margin: 9px 0;
+      font-size: 12px;
+    }
+    .compare-row .metric-name {
+      color: var(--muted);
+      font-weight: 800;
+    }
+    .delta-pill {
+      justify-self: end;
+      min-width: 74px;
+      padding: 3px 7px;
+      border-radius: 999px;
+      background: #eef2f7;
+      color: var(--muted);
+      text-align: center;
+      font-weight: 900;
+    }
+    .delta-pill.good { background: #dcfce7; color: var(--memory); }
+    .delta-pill.bad { background: #fee2e2; color: var(--bad); }
+    .bar-row { display: grid; grid-template-columns: 68px 1fr 78px; gap: 8px; align-items: center; margin: 10px 0; font-size: 12px; }
+    .bar-track { height: 16px; border-radius: 99px; background: #e5e7eb; overflow: hidden; }
     .bar-fill { height: 100%; min-width: 2px; border-radius: 99px; }
     .bar-fill.text { background: #64748b; }
     .bar-fill.structured { background: var(--structured); }
-    .small-card .value { font-size: 28px; font-weight: 900; }
+    .small-card .value { font-size: 32px; font-weight: 900; }
     .good { color: var(--memory); }
     .bad { color: var(--bad); }
     .warn { color: var(--warn); }
@@ -440,7 +706,7 @@ def _html() -> str:
       vertical-align: top;
       overflow-wrap: anywhere;
     }
-    th { color: var(--muted); background: var(--panel-soft); font-size: 12px; }
+    th { color: var(--muted); background: var(--panel-soft); font-size: 12px; position: sticky; top: 0; z-index: 1; }
     details trace-view { display: block; }
     pre {
       margin: 8px 0 0;
@@ -463,7 +729,8 @@ def _html() -> str:
     }
     @media (max-width: 1180px) {
       main { padding: 14px 12px 24px; }
-      .control, .compare, .chart-grid, .overview { grid-template-columns: 1fr; }
+      .control, .compare, .chart-grid, .overview, .evidence-strip, .summary-area, .wide-bars, .task-prompt { grid-template-columns: 1fr; }
+      .topbar { display: block; }
       .flow { grid-template-columns: repeat(2, 1fr); }
       .metrics { grid-template-columns: repeat(2, 1fr); }
     }
@@ -471,17 +738,26 @@ def _html() -> str:
 </head>
 <body>
   <header>
-    <h1>多智能体低开销通信实验面板</h1>
-    <div class="subtitle">纯文本基线与结构化协议协作效果评估看板</div>
+    <div class="topbar">
+      <div class="brand">
+        <h1>多智能体协作通信评测中心</h1>
+      </div>
+    </div>
   </header>
   <main>
     <div class="control">
       <label>任务组
         <select id="taskGroup">
           <option value="all">全部默认任务</option>
-          <option value="protocol_design">协议设计任务组 protocol_design</option>
-          <option value="memory_reuse">共享记忆任务组 memory_reuse</option>
-          <option value="tool_execution">CodeAct 工具执行任务组 tool_execution</option>
+          <option value="document_analysis">文档分析任务组（document_analysis）</option>
+          <option value="result_analysis">结果分析任务组（result_analysis）</option>
+          <option value="technical_review">技术审查任务组（technical_review）</option>
+          <option value="tool_execution">工具执行任务组（tool_execution）</option>
+        </select>
+      </label>
+      <label>任务选择
+        <select id="taskSelect">
+          <option value="all">该组全部任务</option>
         </select>
       </label>
       <label>实验轮数
@@ -492,9 +768,9 @@ def _html() -> str:
       </label>
       <label>运行模式
         <select id="mode">
-          <option value="ab" selected>A/B 对比：text + structured</option>
-          <option value="text">只运行 text</option>
-          <option value="structured">只运行 structured</option>
+          <option value="ab" selected>双模式对比（text + structured）</option>
+          <option value="text">只运行纯文本模式</option>
+          <option value="structured">只运行结构化模式</option>
         </select>
       </label>
       <button class="primary" id="runBtn">运行实验</button>
@@ -502,9 +778,10 @@ def _html() -> str:
       <button id="clearBtn">清空结果</button>
     </div>
     <div class="status" id="status"></div>
+    <details class="task-context" id="taskContext"></details>
 
     <section class="section">
-      <h2>Agent 流程</h2>
+      <h2>智能体协作链路</h2>
       <div class="flow" id="agentFlow"></div>
     </section>
 
@@ -513,25 +790,38 @@ def _html() -> str:
 
   <script>
     const agents = [
-      {key: 'router', label: '路由 Router'},
-      {key: 'planner', label: '规划 Planner'},
-      {key: 'researcher', label: '检索 Researcher'},
-      {key: 'executor', label: '执行 Executor'},
-      {key: 'summarizer', label: '总结 Summarizer'},
-      {key: 'verifier', label: '验证 Verifier'}
+      {key: 'router', label: '路由调度'},
+      {key: 'planner', label: '任务规划'},
+      {key: 'researcher', label: '信息检索'},
+      {key: 'executor', label: '工具执行'},
+      {key: 'summarizer', label: '结果总结'},
+      {key: 'verifier', label: '质量验证'}
     ];
+    const taskNames = {
+      'Read docs/deployment.md and summarize the required environment, startup commands, and expected output files.': '部署文档环境与产物摘要',
+      'Based on the deployment constraints already analyzed, produce a concise reproducibility checklist for running the experiment on openEuler.': 'openEuler 实验复现检查清单',
+      'Read reports/results.json and compare text and structured modes on average tokens, elapsed time, memory hits, and non-text state transfers.': '实验结果指标对比分析',
+      'Explain whether the structured mode reduces communication overhead, using the available experiment results as evidence.': '结构化模式通信开销证据解释',
+      'Read docs/technical_description.md and summarize the system modules, including protocol, memory, state exchange, orchestration, and CodeAct tools.': '系统技术模块摘要',
+      'Assess which module contributes most to reducing communication cost and identify one remaining weakness in the current design.': '降开销贡献模块与弱点评估',
+      'Find the Markdown files in the workspace and build a compact table describing the purpose of each file.': 'Markdown 项目文档清单',
+      'Using the discovered project documents, generate a short final submission checklist with required source files, reports, and runtime evidence.': '最终提交材料检查清单'
+    };
     const stateText = {waiting: '等待', running: '运行中', done: '完成', failed: '失败'};
     const taskGroup = document.querySelector('#taskGroup');
+    const taskSelect = document.querySelector('#taskSelect');
     const rounds = document.querySelector('#rounds');
     const mode = document.querySelector('#mode');
     const runBtn = document.querySelector('#runBtn');
     const loadBtn = document.querySelector('#loadBtn');
     const clearBtn = document.querySelector('#clearBtn');
     const statusBox = document.querySelector('#status');
+    const taskContext = document.querySelector('#taskContext');
     const flow = document.querySelector('#agentFlow');
     const content = document.querySelector('#content');
     let currentData = null;
     let progressTimer = null;
+    let taskCatalog = {all: []};
 
     function initFlow(states = {}) {
       flow.innerHTML = agents.map(agent => {
@@ -544,6 +834,8 @@ def _html() -> str:
       const res = await fetch('/api/config');
       const cfg = await res.json();
       const env = cfg.environment || {};
+      taskCatalog = {all: cfg.default_tasks || [], ...(cfg.task_groups || {})};
+      populateTaskSelect();
       statusBox.textContent = `后端模型：${env.llm_backend || 'required'} / ${env.llm_model || 'required'}；状态后端：${env.state_backend || 'shared_memory'}；Token 统计：${env.token_count_method || ''}`;
     }
 
@@ -554,7 +846,7 @@ def _html() -> str:
         const res = await fetch('/api/run', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({task_group: taskGroup.value, rounds: Number(rounds.value), mode: mode.value})
+          body: JSON.stringify({task_group: taskGroup.value, task_index: taskSelect.value, rounds: Number(rounds.value), mode: mode.value})
         });
         const data = await res.json();
         if (!data.ok) throw new Error(data.error);
@@ -597,6 +889,39 @@ def _html() -> str:
       content.textContent = '暂无实验结果，请先运行实验或加载最近结果。';
       initFlow();
       statusBox.textContent = '已清空页面结果。';
+    }
+
+    function populateTaskSelect() {
+      const tasks = taskCatalog[taskGroup.value] || [];
+      taskSelect.innerHTML = '<option value="all">该组全部任务</option>' + tasks.map((task, index) => (
+        `<option value="${index}">任务 ${index + 1}：${escapeHtml(taskTitle(task))}</option>`
+      )).join('');
+      renderTaskContext();
+    }
+
+    function renderTaskContext() {
+      const tasks = taskCatalog[taskGroup.value] || [];
+      const selectedIndex = Number(taskSelect.value);
+      const selectedTasks = taskSelect.value === 'all'
+        ? tasks
+        : (Number.isInteger(selectedIndex) && tasks[selectedIndex] ? [tasks[selectedIndex]] : []);
+      if (!selectedTasks.length) {
+        taskContext.innerHTML = '<summary>当前任务输入：<span>暂无可运行任务</span></summary>';
+        return;
+      }
+      const summaryText = taskSelect.value === 'all'
+        ? `当前选择该组全部 ${selectedTasks.length} 个任务，展开查看自然语言任务文本`
+        : `${taskTitle(selectedTasks[0])}，展开查看原始任务文本`;
+      taskContext.innerHTML = `<summary>当前任务输入：<span>${escapeHtml(summaryText)}</span></summary>
+        <div class="task-context-body">
+          ${selectedTasks.map((task, index) => {
+            const taskNumber = taskSelect.value === 'all' ? index + 1 : selectedIndex + 1;
+            return `<div class="task-prompt">
+              <strong>任务 ${taskNumber}</strong>
+              <p><b>${escapeHtml(taskTitle(task))}</b><br>${escapeHtml(task)}</p>
+            </div>`;
+          }).join('')}
+        </div>`;
     }
 
     function setBusy(busy, text) {
@@ -652,7 +977,8 @@ def _html() -> str:
       if (result.variants) return normalizeAblation(result, path);
       const runs = (result.runs || []).map(run => ({...run, display_mode: run.mode}));
       const summary = buildSummary(runs, result.summary);
-      return {kind: 'run', path, raw: result, runs, summary};
+      const aliases = buildAliases(runs);
+      return {kind: 'run', path, raw: result, runs, summary, aliases};
     }
 
     function normalizeAblation(result, path) {
@@ -664,7 +990,8 @@ def _html() -> str:
         ...(structured.runs || []).map(r => ({...r, mode: 'structured', display_mode: 'structured', variant: structured.name || 'structured'}))
       ];
       const summary = buildSummary(runs);
-      return {kind: 'ablation', path, raw: result, runs, summary};
+      const aliases = buildAliases(runs);
+      return {kind: 'ablation', path, raw: result, runs, summary, aliases};
     }
 
     function buildSummary(runs, existing) {
@@ -695,12 +1022,13 @@ def _html() -> str:
       content.className = '';
       content.innerHTML = `
         ${overview(data)}
-        <div class="compare">${modeColumn('纯文本协作模式', 'text', data)}${modeColumn('结构化协议协作模式', 'structured', data)}</div>
+        ${evidenceStrip(data)}
         <section class="section"><h2>指标图表：文本基线 vs 结构化协议</h2>${charts(data.summary)}</section>
+        <div class="compare">${modeColumn('纯文本基线', 'text', data)}${modeColumn('结构化协作', 'structured', data)}</div>
         <section class="section"><h2>实验结果明细表</h2>${resultTable(data.runs)}</section>
       `;
-      document.querySelector('#modeFilter').addEventListener('change', event => renderTableRows(data.runs, event.target.value));
-      renderTableRows(data.runs, 'all');
+      document.querySelector('#modeFilter').addEventListener('change', event => renderTableRows(data.runs, event.target.value, data.aliases));
+      renderTableRows(data.runs, 'all', data.aliases);
     }
 
     function overview(data) {
@@ -712,7 +1040,7 @@ def _html() -> str:
         <div class="overview-card">
           <div class="label">当前结果文件</div>
           <div class="value">${escapeHtml(data.path || '未加载')}</div>
-          <div class="hint">${runCount} 条运行记录 / ${taskCount} 个任务</div>
+          <div class="hint">${runCount} 条实验样本 / ${taskCount} 个任务</div>
         </div>
         <div class="overview-card">
           <div class="label">Token 变化率</div>
@@ -737,6 +1065,19 @@ def _html() -> str:
       </div>`;
     }
 
+    function evidenceStrip(data) {
+      const structuredRuns = data.runs.filter(r => r.mode === 'structured');
+      const memoryIds = uniqueIds(structuredRuns, 'memory_hit_ids');
+      const stateIds = uniqueIds(structuredRuns, 'state_ref_ids');
+      const traceCountValue = traceCount(structuredRuns);
+      return `<div class="evidence-strip">
+        <div class="evidence"><div class="label">结构化协议字段</div><div class="value">action / input / output / refs / state</div></div>
+        <div class="evidence"><div class="label">非文本状态对象</div><div class="value">${stateIds.length} 个状态对象</div></div>
+        <div class="evidence"><div class="label">历史任务复用</div><div class="value">${memoryIds.length} 条共享记忆</div></div>
+        <div class="evidence"><div class="label">消息链路记录</div><div class="value">${traceCountValue} 条 trace</div></div>
+      </div>`;
+    }
+
     function modeColumn(title, name, data) {
       const runs = data.runs.filter(r => r.mode === name);
       const latest = runs[runs.length - 1] || {};
@@ -744,8 +1085,9 @@ def _html() -> str:
       const memoryIds = uniqueIds(runs, 'memory_hit_ids');
       const stateIds = uniqueIds(runs, 'state_ref_ids');
       return `<section class="mode-card ${name}">
-        <h2>${title}<span>${m.runs || 0} 次运行</span></h2>
-        <div class="summary-text">${escapeHtml(short(latest.final || '暂无输出摘要', 520))}</div>
+        <h2>${title}<span>样本数：${m.runs || 0}</span></h2>
+        <div class="mode-note">${name === 'structured' ? '通过结构化字段、状态引用和共享记忆减少重复传输' : '以自然语言完整交接上下文，作为对照基线'}</div>
+        ${name === 'structured' ? structuredTop(latest, memoryIds, stateIds, data.aliases) : `<div class="summary-text">${escapeHtml(short(latest.final || '暂无输出摘要', 520))}</div>`}
         <div class="metrics">
           ${metric('消息数', m.avg_messages)}
           ${metric('字符数', m.avg_chars)}
@@ -757,16 +1099,29 @@ def _html() -> str:
           ${metric('链路步数', traceCount(runs))}
         </div>
         ${name === 'structured' ? `<div class="refs">
-          <div><strong>共享记忆引用 memory_id</strong><div class="pill-line">${pills(memoryIds, 'memory')}</div></div>
-          <div><strong>非文本状态引用 state_id</strong><div class="pill-line">${pills(stateIds, 'state')}</div></div>
+          <div><strong>共享记忆引用</strong><div class="pill-line">${pills(memoryIds, 'memory', data.aliases)}</div></div>
+          <div><strong>非文本状态引用</strong><div class="pill-line">${pills(stateIds, 'state', data.aliases)}</div></div>
         </div>` : ''}
       </section>`;
+    }
+
+    function structuredTop(latest, memoryIds, stateIds, aliases) {
+      return `<div class="summary-area">
+        <div class="summary-text">${escapeHtml(short(latest.final || '暂无输出摘要', 420))}</div>
+        <div class="evidence-panel">
+          <h3>结构化引用证据</h3>
+          <div class="evidence-row"><strong>共享记忆</strong><div class="pill-line">${pills(memoryIds, 'memory', aliases)}</div></div>
+          <div class="evidence-row"><strong>状态对象</strong><div class="pill-line">${pills(stateIds, 'state', aliases)}</div></div>
+          <div class="evidence-row"><strong>链路记录</strong><div class="pill-line"><span class="pill">${traceCount([latest])} 条消息</span></div></div>
+        </div>
+      </div>`;
     }
 
     function charts(summary) {
       const text = summary.text || {};
       const structured = summary.structured || {};
-      return `<div class="chart-grid">
+      return `${wideComparison(text, structured)}
+      <div class="chart-grid">
         ${barChart('平均 Token 对比', text.avg_approx_tokens, structured.avg_approx_tokens)}
         ${barChart('平均字符数对比', text.avg_chars, structured.avg_chars)}
         ${barChart('平均耗时 ms 对比', text.avg_elapsed_ms, structured.avg_elapsed_ms)}
@@ -777,6 +1132,47 @@ def _html() -> str:
         ${metric('Token 变化率', fmtPct(summary.comparison.token_delta_pct), deltaClass(summary.comparison.token_delta_pct))}
         ${metric('字符数变化率', fmtPct(summary.comparison.char_delta_pct), deltaClass(summary.comparison.char_delta_pct))}
         ${metric('耗时变化率', fmtPct(summary.comparison.elapsed_delta_pct), deltaClass(summary.comparison.elapsed_delta_pct))}
+      </div>`;
+    }
+
+    function wideComparison(text, structured) {
+      const efficiencyRows = [
+        ['消息数', text.avg_messages, structured.avg_messages],
+        ['Token', text.avg_approx_tokens, structured.avg_approx_tokens],
+        ['字符数', text.avg_chars, structured.avg_chars],
+        ['耗时 ms', text.avg_elapsed_ms, structured.avg_elapsed_ms]
+      ];
+      const mechanismRows = [
+        ['记忆命中', text.avg_memory_hits, structured.avg_memory_hits],
+        ['状态传递', text.avg_non_text_transfers, structured.avg_non_text_transfers],
+        ['传递大小', text.avg_non_text_transfer_size, structured.avg_non_text_transfer_size]
+      ];
+      return `<div class="wide-bars">
+        <div class="wide-chart"><h3>通信效率对比</h3>${chartLegend()}${efficiencyRows.map(row => compareBarRow(...row)).join('')}</div>
+        <div class="wide-chart"><h3>结构化机制证据</h3>${chartLegend()}${mechanismRows.map(row => compareBarRow(...row)).join('')}</div>
+      </div>`;
+    }
+
+    function chartLegend() {
+      return `<div class="chart-legend">
+        <span class="legend-item"><span class="legend-dot"></span>纯文本</span>
+        <span class="legend-item"><span class="legend-dot structured"></span>结构化</span>
+        <span class="legend-item">右侧为结构化相对纯文本变化</span>
+      </div>`;
+    }
+
+    function compareBarRow(label, textValue, structuredValue) {
+      const max = Math.max(Number(textValue || 0), Number(structuredValue || 0), 1);
+      const textWidth = Math.max(2, Math.round((Number(textValue || 0) / max) * 100));
+      const structuredWidth = Math.max(2, Math.round((Number(structuredValue || 0) / max) * 100));
+      const delta = pct(structuredValue, textValue);
+      return `<div class="compare-row">
+        <div class="metric-name">${escapeHtml(label)}</div>
+        <div class="bar-track"><div class="bar-fill text" style="width:${textWidth}%"></div></div>
+        <strong>${fmt(textValue)}</strong>
+        <div class="bar-track"><div class="bar-fill structured" style="width:${structuredWidth}%"></div></div>
+        <strong>${fmt(structuredValue)}</strong>
+        <span class="delta-pill ${deltaClass(delta)}">${fmtPct(delta)}</span>
       </div>`;
     }
 
@@ -793,15 +1189,15 @@ def _html() -> str:
       </table></div>`;
     }
 
-    function renderTableRows(runs, filter) {
+    function renderTableRows(runs, filter, aliases) {
       const tbody = document.querySelector('#rows');
       const filtered = runs.filter(run => filter === 'all' || run.mode === filter);
       tbody.innerHTML = filtered.map(run => {
         const m = run.metrics || {};
-        const stateIds = (m.state_ref_ids || []).join(', ');
-        const memoryIds = (m.memory_hit_ids || []).join(', ');
+        const stateIds = friendlyList(m.state_ref_ids || [], aliases);
+        const memoryIds = friendlyList(m.memory_hit_ids || [], aliases);
         return `<tr>
-          <td>${escapeHtml(short(run.task || '', 120))}</td>
+          <td title="${escapeHtml(run.task || '')}">${escapeHtml(short(taskTitle(run.task || ''), 80))}</td>
           <td>${fmt(run.round || 1)}</td>
           <td>${escapeHtml(modeLabel(run.mode || ''))}</td>
           <td>${fmt(m.message_count)}</td>
@@ -845,15 +1241,37 @@ def _html() -> str:
       return `<div class="bar-row"><span>${label}</span><div class="bar-track"><div class="bar-fill ${klass}" style="width:${width}%"></div></div><strong>${fmt(value)}</strong></div>`;
     }
 
-    function pills(values, klass) {
+    function pills(values, klass, aliases = {}) {
       if (!values.length) return '<span class="pill">无</span>';
-      return values.slice(0, 12).map(value => `<span class="pill ${klass}">${escapeHtml(value)}</span>`).join('');
+      return values.slice(0, 12).map(value => `<span class="pill ${klass}" title="${escapeHtml(value)}">${escapeHtml(aliasFor(value, aliases))}</span>`).join('');
+    }
+
+    function buildAliases(runs) {
+      const memory = uniqueIds(runs, 'memory_hit_ids');
+      const states = uniqueIds(runs, 'state_ref_ids');
+      const aliases = {};
+      memory.forEach((id, index) => aliases[id] = `记忆 ${index + 1}`);
+      states.forEach((id, index) => aliases[id] = `状态 ${index + 1}`);
+      return aliases;
+    }
+
+    function aliasFor(value, aliases = {}) {
+      return aliases[value] || value;
+    }
+
+    function friendlyList(values, aliases = {}) {
+      if (!values.length) return '';
+      return values.map(value => aliasFor(value, aliases)).join(', ');
     }
 
     function modeLabel(value) {
       if (value === 'text') return '纯文本 text';
       if (value === 'structured') return '结构化 structured';
       return value;
+    }
+
+    function taskTitle(task) {
+      return taskNames[task] || short(task, 42);
     }
 
     function uniqueIds(runs, key) {
@@ -912,6 +1330,8 @@ def _html() -> str:
     runBtn.addEventListener('click', runExperiment);
     loadBtn.addEventListener('click', loadLatest);
     clearBtn.addEventListener('click', clearResults);
+    taskGroup.addEventListener('change', populateTaskSelect);
+    taskSelect.addEventListener('change', renderTaskContext);
     initFlow();
     loadConfig();
     loadLatest();

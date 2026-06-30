@@ -269,7 +269,7 @@ Quick 1-round A/B demo:
 ```bash
 curl --noproxy '*' -X POST http://127.0.0.1:8765/api/run \
   -H 'Content-Type: application/json' \
-  -d '{"task_group":"protocol_design","rounds":1,"mode":"ab"}'
+  -d '{"task_group":"document_analysis","rounds":1,"mode":"ab"}'
 ```
 
 Formal 10-round A/B run:
